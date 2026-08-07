@@ -46,8 +46,111 @@ static void usage(const char *prog)
             "  -d VAL   damping factor            (default 0.85)\n"
             "  -t VAL   L1 convergence tolerance  (default 1e-6)\n"
             "  -n NUM   maximum iterations        (default 100)\n"
-            "  -k NUM   how many top nodes to print (default 10)\n",
+            "  -k NUM   how many top nodes to print (default 10)\n"
+            "  -o FILE  write every rank to FILE, with the run details in a header\n"
+            "  -c FILE  append one CSV row of run details to FILE (for benchmarks)\n",
             prog);
+}
+
+/* "seq" and "omp" are separate rows in the benchmark log on purpose: an
+ * OpenMP build restricted to one thread is not the same thing as a build
+ * with no OpenMP at all, and the difference shows up in the timings. */
+#ifdef _OPENMP
+#define BUILD_LABEL "omp"
+#else
+#define BUILD_LABEL "seq"
+#endif
+
+/* Enough digits to read the value back bit-for-bit, so that two runs can be
+ * compared exactly -- the point of the file is diffing CPU against GPU. */
+static int rank_digits(void)
+{
+    return sizeof(rank_t) == sizeof(double) ? 17 : 9;
+}
+
+/* Writes every rank, in node order.  Node order rather than sorted by rank so
+ * that two files line up line-by-line and can be compared directly; sorting
+ * would reorder near-ties differently between implementations and make a diff
+ * useless.  Use `sort -k2 -g -r` afterwards to view them by rank. */
+static int write_ranks(const char *path, const csr_graph *g, const uint64_t *ids,
+                       const rank_t *rank, const pagerank_params *params,
+                       const pagerank_stats *stats, double rank_sum, int threads)
+{
+    FILE *f = fopen(path, "w");
+    uint64_t v;
+
+    if (f == NULL) {
+        fprintf(stderr, "%s: cannot open for writing\n", path);
+        return -1;
+    }
+
+    fprintf(f, "# pagerank ranks\n");
+    fprintf(f, "# nodes            %" PRIu64 "\n", g->n_nodes);
+    fprintf(f, "# edges            %" PRIu64 "\n", g->n_edges);
+    fprintf(f, "# build            %s\n", BUILD_LABEL);
+    fprintf(f, "# precision        %s\n",
+            sizeof(rank_t) == sizeof(double) ? "double" : "float");
+    fprintf(f, "# threads          %d\n", threads);
+    fprintf(f, "# damping          %g\n", params->damping);
+    fprintf(f, "# tolerance        %g\n", params->tolerance);
+    fprintf(f, "# iterations       %d\n", stats->iterations);
+    fprintf(f, "# converged        %s\n", stats->converged ? "yes" : "no");
+    fprintf(f, "# final_L1_change  %.6e\n", stats->error);
+    fprintf(f, "# seconds_total    %.6f\n", stats->seconds);
+    fprintf(f, "# seconds_per_iter %.6f\n", stats->seconds / (double)stats->iterations);
+    fprintf(f, "# rank_sum         %.15f\n", rank_sum);
+    fprintf(f, "# columns          %s rank\n", ids != NULL ? "snap_id" : "node_index");
+
+    for (v = 0; v < g->n_nodes; v++) {
+        fprintf(f, "%" PRIu64 " %.*g\n",
+                ids != NULL ? ids[v] : v, rank_digits(), (double)rank[v]);
+    }
+
+    if (fclose(f) != 0) {
+        fprintf(stderr, "%s: error while writing\n", path);
+        return -1;
+    }
+    return 0;
+}
+
+/* Appends one row per run, so a sweep over graphs and thread counts builds
+ * the results table by itself.  The header is written only when the file is
+ * created. */
+static int append_csv(const char *path, const char *graph, const csr_graph *g,
+                      const pagerank_params *params, const pagerank_stats *stats,
+                      double rank_sum, int threads)
+{
+    int is_new = 0;
+    FILE *probe = fopen(path, "r");
+    FILE *f;
+
+    if (probe == NULL) {
+        is_new = 1;
+    } else {
+        fclose(probe);
+    }
+
+    f = fopen(path, "a");
+    if (f == NULL) {
+        fprintf(stderr, "%s: cannot open for appending\n", path);
+        return -1;
+    }
+    if (is_new) {
+        fprintf(f, "graph,nodes,edges,build,precision,threads,damping,tolerance,"
+                   "iterations,converged,seconds_total,seconds_per_iter,rank_sum\n");
+    }
+    fprintf(f, "%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%d,%g,%g,%d,%d,%.6f,%.6f,%.15f\n",
+            graph, g->n_nodes, g->n_edges, BUILD_LABEL,
+            sizeof(rank_t) == sizeof(double) ? "double" : "float",
+            threads, params->damping, params->tolerance,
+            stats->iterations, stats->converged,
+            stats->seconds, stats->seconds / (double)stats->iterations, rank_sum);
+
+    if (fclose(f) != 0) {
+        fprintf(stderr, "%s: error while writing\n", path);
+        return -1;
+    }
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -58,8 +161,10 @@ int main(int argc, char **argv)
     rank_t *rank;
     uint64_t *ids = NULL;
     const char *ids_path = NULL;
+    const char *ranks_path = NULL;
+    const char *csv_path = NULL;
     top_entry *top;
-    int k = 10, n_top = 0, i;
+    int k = 10, n_top = 0, i, threads;
     uint64_t v;
     accum_t total = 0.0;
 
@@ -83,6 +188,10 @@ int main(int argc, char **argv)
             params.max_iters = (int)strtol(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "-k") == 0) {
             k = (int)strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "-o") == 0) {
+            ranks_path = argv[++i];
+        } else if (strcmp(argv[i], "-c") == 0) {
+            csv_path = argv[++i];
         } else {
             fprintf(stderr, "%s: unknown option\n", argv[i]);
             usage(argv[0]);
@@ -117,11 +226,17 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+#ifdef _OPENMP
+    threads = omp_get_max_threads();
+#else
+    threads = 1;
+#endif
+
     printf("graph      %s\n", argv[1]);
     printf("           %" PRIu64 " nodes, %" PRIu64 " edges\n", g.n_nodes, g.n_edges);
     printf("precision  %s\n", sizeof(rank_t) == sizeof(double) ? "double" : "float");
 #ifdef _OPENMP
-    printf("threads    %d (OpenMP)\n", omp_get_max_threads());
+    printf("threads    %d (OpenMP)\n", threads);
 #else
     printf("threads    1 (sequential build, no OpenMP)\n");
 #endif
@@ -160,6 +275,15 @@ int main(int argc, char **argv)
             printf("  %2d. node %9" PRIu64 "   %.9f\n",
                    i + 1, top[i].node, (double)top[i].value);
         }
+    }
+
+    if (ranks_path != NULL &&
+        write_ranks(ranks_path, &g, ids, rank, &params, &stats, (double)total, threads) == 0) {
+        printf("\nranks written to %s\n", ranks_path);
+    }
+    if (csv_path != NULL &&
+        append_csv(csv_path, argv[1], &g, &params, &stats, (double)total, threads) == 0) {
+        printf("run appended to %s\n", csv_path);
     }
 
     free(rank);

@@ -63,3 +63,8 @@ __pycache__/
 
 # Build output
 build/
+
+# Experiment output: the rank vectors are far too large to version
+# (soc-LiveJournal1 alone is ~150 MB), but results/bench.csv is a few kB and
+# is the data behind the tables in the report, so it is kept.
+results/*.ranks.txt

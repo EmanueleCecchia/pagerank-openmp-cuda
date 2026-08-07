@@ -39,6 +39,7 @@ MAX_DENSE_NODES = 15000
 TOP_LINE = re.compile(
     r"^\s*(\d+)\.\s+node\s+(\d+)\s+SNAP id\s+(\d+)\s+([-\d.eE+]+)\s*$")
 SUM_LINE = re.compile(r"^rank sum\s+([-\d.eE+]+)\s*$")
+CONV_LINE = re.compile(r"^(converged|STOPPED[^)]*?) after (\d+) iterations")
 
 
 def parse_edges(path):
@@ -144,7 +145,7 @@ def run_binary(binary, csr_path, ids_path, k, damping, tolerance, max_iters):
     except subprocess.CalledProcessError as exc:
         raise SystemExit(f"{binary} failed:\n{exc.stderr}")
 
-    top, rank_sum = [], None
+    top, rank_sum, converged, iterations = [], None, None, None
     for line in done.stdout.splitlines():
         match = TOP_LINE.match(line)
         if match:
@@ -153,9 +154,46 @@ def run_binary(binary, csr_path, ids_path, k, damping, tolerance, max_iters):
         match = SUM_LINE.match(line)
         if match:
             rank_sum = float(match.group(1))
+            continue
+        match = CONV_LINE.match(line)
+        if match:
+            converged = match.group(1) == "converged"
+            iterations = int(match.group(2))
     if not top:
         raise SystemExit(f"could not parse any ranking from {binary}:\n{done.stdout}")
-    return top, rank_sum, done.stdout
+    return top, rank_sum, converged, iterations
+
+
+def networkx_pagerank(edges, order, damping, max_iters):
+    """Third-party cross-check.
+
+    The dense reference above is independent in method but was written by the
+    same hand as the code it checks, so a misunderstanding of the algorithm
+    itself (the dangling-node convention, say) could be reproduced in both.
+    networkx is an outside implementation, which rules that out.
+
+    Returns a (ranks, note) pair; ranks is None when the check cannot run, and
+    note then says why.  networkx's default dangling handling -- spread over
+    the personalization vector, which defaults to uniform -- matches ours, so
+    the two are directly comparable.
+    """
+    try:
+        import networkx as nx
+    except ImportError:
+        return None, "networkx not installed (pip install networkx)"
+
+    graph = nx.DiGraph()
+    graph.add_nodes_from(order)
+    graph.add_edges_from(edges)
+    try:
+        # networkx 3.x routes pagerank() through scipy, so a missing scipy
+        # surfaces here rather than at the import above.
+        ranks = nx.pagerank(graph, alpha=damping, tol=1e-14, max_iter=max_iters)
+    except ImportError as exc:
+        return None, f"networkx needs a package that is missing ({exc.name})"
+    except nx.PowerIterationFailedConvergence:
+        return None, f"networkx did not converge within {max_iters} iterations"
+    return np.array([ranks[node] for node in order]), None
 
 
 def main(argv=None):
@@ -194,7 +232,7 @@ def main(argv=None):
 
     failures = []
 
-    print("\n[1/3] binary CSR against the independent parse")
+    print("\n[csr] binary CSR against the independent parse")
     problems = check_csr(csr_path, ids_path, edges, order)
     if problems:
         failures.extend(problems)
@@ -203,14 +241,45 @@ def main(argv=None):
     else:
         print("      ok: rows are the true in-neighbour sets, sorted and unique")
 
-    print(f"\n[2/3] dense reference ({n * n * 8 / 2**20:.0f} MiB matrix)")
+    print(f"\n[dense] own reference ({n * n * 8 / 2**20:.0f} MiB matrix)")
     reference = dense_pagerank(edges, order, args.damping, 1e-15, args.max_iters)
     order_desc = np.argsort(-reference)[:args.k]
     print(f"      ok: converged, ranks sum to {reference.sum():.12f}")
 
-    print(f"\n[3/3] {args.binary}")
-    top, rank_sum, _ = run_binary(args.binary, csr_path, ids_path, args.k,
-                                  args.damping, args.tolerance, args.max_iters)
+    print("\n[networkx] third-party cross-check")
+    nx_ranks, nx_note = networkx_pagerank(edges, order, args.damping, args.max_iters)
+    if nx_ranks is None:
+        print(f"      skipped: {nx_note}")
+    else:
+        nx_worst = float(np.abs(nx_ranks - reference).max())
+        nx_top = [order[i] for i in np.argsort(-nx_ranks)[:args.k]]
+        dense_top = [order[i] for i in order_desc]
+        if nx_top != dense_top:
+            failures.append("networkx and the dense reference disagree on the ranking")
+            print(f"      FAIL ranking differs\n        networkx {nx_top}\n        dense    {dense_top}")
+        elif nx_worst > args.value_tolerance:
+            failures.append(f"networkx differs from the dense reference by {nx_worst:.3e}")
+            print(f"      FAIL largest difference {nx_worst:.3e} > {args.value_tolerance:.0e}")
+        else:
+            print(f"      ok: agrees with the dense reference to {nx_worst:.3e}")
+            print("          (rules out the same misreading of the algorithm in both)")
+
+    print(f"\n[binary] {args.binary}")
+    top, rank_sum, converged, iterations = run_binary(
+        args.binary, csr_path, ids_path, args.k,
+        args.damping, args.tolerance, args.max_iters)
+
+    # A run that hit the iteration limit has not settled, so its ranks are not
+    # the answer even if the top few happen to look right.
+    if converged is None:
+        failures.append("could not tell whether the binary converged")
+        print("      FAIL no convergence line in the output")
+    elif not converged:
+        failures.append(f"the binary stopped at the iteration limit ({iterations} iterations)")
+        print(f"      FAIL stopped at the iteration limit after {iterations} iterations,"
+              f" so the ranks have not settled")
+    else:
+        print(f"      ok: converged in {iterations} iterations")
 
     got_ids = [node for node, _ in top]
     want_ids = [order[i] for i in order_desc]

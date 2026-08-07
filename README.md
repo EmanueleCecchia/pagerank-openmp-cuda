@@ -73,18 +73,79 @@ Options: `-d` damping (default 0.85), `-t` L1 tolerance (default 1e-6),
 `-n` maximum iterations (default 100), `-k` how many top nodes to print,
 `-i` the `.ids` file. Thread count comes from `OMP_NUM_THREADS`.
 
+### Saving results
+
+`-o FILE` writes every rank, one node per line, after a header recording how
+the run was produced (build, precision, threads, iterations, timing, rank sum):
+
+```bash
+./build/pagerank_omp data/snap/web-Google.csr -i data/snap/web-Google.ids -o ranks.txt
+```
+
+Ranks are written in node order, not sorted by rank, so that two files line up
+line-by-line and can be compared directly — sorting would order near-ties
+differently between implementations and make a diff meaningless. To view them
+by rank instead: `grep -v '^#' ranks.txt | sort -k2 -g -r | head`.
+
+Values carry enough digits to round-trip exactly, which is what makes it
+possible to check one implementation against another across the whole vector
+rather than just the top few. Comparing the OpenMP build against the
+sequential one on web-Google gives a maximum relative difference of 2e-14
+(floating-point summation order), and the float build 2e-7 (float's machine
+epsilon).
+
+`-c FILE` appends one CSV row per run instead, so a sweep builds its own
+results table:
+
+```bash
+for t in 1 2 4 8; do
+    OMP_NUM_THREADS=$t ./build/pagerank_omp data/snap/web-Google.csr -c bench.csv
+done
+```
+
+## Reproducing the experiments
+
+```bash
+tools/run_benchmarks.sh
+```
+
+Runs every graph against the sequential, OpenMP (1/2/4/8 threads) and float
+builds, three repetitions each, and writes:
+
+- `results/bench.csv` — one row per run; take the minimum per configuration,
+  since the fastest run is the one least disturbed by other activity
+- `results/<graph>.ranks.txt` — the ranks themselves (gitignored: the
+  soc-LiveJournal1 vector alone is ~150 MB)
+
+Settings can be overridden from the environment, e.g.
+`GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh`.
+
 ## Verifying correctness
 
 ```bash
 python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
 ```
 
-Recomputes PageRank by a route sharing no code with the project — the edge
-list is re-parsed in plain Python and the ranks are computed on a dense N×N
-transition matrix — then compares the result against the C binary. Checks the
-CSR structure, the top-k ranking, the rank values, and that the ranks sum to 1
-(which fails if dangling-node mass is mishandled). Exits non-zero on any
-mismatch, so it can be used as a regression test.
+Recomputes PageRank by routes sharing no code with the project, then compares
+against the C binary. Four checks:
+
+- the binary CSR really is the transpose of an independently parsed edge list;
+- a **dense N×N** reference — no CSR, no gather loop, so a bug in the sparse
+  representation cannot hide;
+- **networkx**, a third-party implementation, against that dense reference:
+  the dense code is independent in method but shares an author with the code
+  it checks, so this rules out the same misreading of the algorithm appearing
+  in both (skipped automatically if networkx or scipy is missing);
+- the C binary itself — that it **converged** rather than hitting the
+  iteration limit, that the top-k ranking and values match, and that the ranks
+  sum to 1 (which fails if dangling-node mass is mishandled).
+
+Exits non-zero on any mismatch, so it works as a regression test. The
+convergence check matters: a run stopped at the iteration limit can still
+produce the right *ordering* while its values are far from settled.
+
+The networkx check needs `networkx` and `scipy` (networkx 3.x routes
+`pagerank()` through scipy).
 
 The dense matrix costs N² × 8 bytes, so this only works on the smallest graph:
 wiki-Vote needs ~390 MiB, web-Google would need ~5.6 TiB. That is why
