@@ -4,10 +4,11 @@
 #include "csr.h"
 
 /* Precision of the rank vector.  Compile with -DPAGERANK_FLOAT for single
- * precision: consumer Pascal (the GTX 1050 Ti used here, compute capability
- * 6.1) runs FP64 at 1/32 of the FP32 rate, so the CUDA kernel will want
- * float.  Keeping both reachable from one source lets the accuracy and the
- * speed of the two be compared. */
+ * precision: consumer-grade GPUs commonly run FP64 at a small fraction of
+ * their FP32 rate (query with cudaGetDeviceProperties at runtime, per the
+ * portability requirement -- never assume a specific device), so the CUDA
+ * kernel will likely want float.  Keeping both reachable from one source
+ * lets the accuracy and the speed of the two be compared. */
 #ifdef PAGERANK_FLOAT
 typedef float rank_t;
 #else
