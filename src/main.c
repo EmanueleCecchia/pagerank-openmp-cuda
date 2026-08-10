@@ -158,7 +158,7 @@ int main(int argc, char **argv)
     csr_graph g;
     pagerank_params params = pagerank_default_params();
     pagerank_stats stats;
-    rank_t *rank;
+    rank_t *rank;   /* address only -- malloc() below creates the array once g.n_nodes is known */
     uint64_t *ids = NULL;
     const char *ids_path = NULL;
     const char *ranks_path = NULL;
@@ -215,6 +215,7 @@ int main(int argc, char **argv)
         }
     }
 
+    /* heap, not rank_t rank[N]: g.n_nodes is unknown until now and too big for the stack */
     rank = malloc((size_t)g.n_nodes * sizeof(rank_t));
     top  = malloc((size_t)k * sizeof(top_entry));
     if (rank == NULL || top == NULL) {
