@@ -47,25 +47,38 @@ static int read_exact(FILE *f, void *dst, uint64_t count, size_t size)
     return 0;
 }
 
-/* Checks the invariants the PageRank loops rely on: row_ptr must start at 0,
- * be non-decreasing and end at n_edges, and every column index must be a
- * valid node.  Without this a corrupt file would make the kernels read past
- * the end of col_idx.  Costs one pass over the arrays, negligible next to
- * the many PageRank iterations that follow. */
-static int csr_validate(const csr_graph *g, const char *path)
+/* The offsets must cover exactly the whole edge array: row 0 starts at the
+ * beginning, and the extra final entry ends at the edge count. */
+static int check_rowptr_span(const csr_graph *g, const char *path)
 {
-    uint64_t v, j;
-
     if (g->row_ptr[0] != 0 || g->row_ptr[g->n_nodes] != g->n_edges) {
         fprintf(stderr, "%s: row_ptr does not span [0, n_edges]\n", path);
         return -1;
     }
+    return 0;
+}
+
+/* Offsets must never go backwards, otherwise row_ptr[v + 1] - row_ptr[v]
+ * would be a negative length and the gather loop would run off the array. */
+static int check_rowptr_monotonic(const csr_graph *g, const char *path)
+{
+    uint64_t v;
+
     for (v = 0; v < g->n_nodes; v++) {
         if (g->row_ptr[v] > g->row_ptr[v + 1]) {
             fprintf(stderr, "%s: row_ptr decreases at row %" PRIu64 "\n", path, v);
             return -1;
         }
     }
+    return 0;
+}
+
+/* Every stored neighbour must name a real node.  This is what lets the kernel
+ * index contrib[col_idx[j]] with no bounds check of its own. */
+static int check_neighbours_are_existing_nodes(const csr_graph *g, const char *path)
+{
+    uint64_t j;
+
     for (j = 0; j < g->n_edges; j++) {
         if (g->col_idx[j] >= g->n_nodes) {
             fprintf(stderr, "%s: column index %" PRIu32 " at position %" PRIu64
@@ -76,12 +89,62 @@ static int csr_validate(const csr_graph *g, const char *path)
     return 0;
 }
 
+/* The invariants the PageRank loops rely on.  Without them a corrupt file
+ * would make the kernels read past the end of col_idx.  Costs one pass over
+ * the arrays, negligible next to the many iterations that follow. */
+static int csr_validate(const csr_graph *g, const char *path)
+{
+    if (check_rowptr_span(g, path)                   != 0) return -1;
+    if (check_rowptr_monotonic(g, path)              != 0) return -1;
+    if (check_neighbours_are_existing_nodes(g, path) != 0) return -1;
+    return 0;
+}
+
+/* The two header checks below must stay in this order and stay adjacent: the
+ * first bounds the counts so that the arithmetic in the second cannot
+ * overflow on a corrupt header.  csr_load() enforces the order by chaining
+ * them with ||, which short-circuits. */
+
+/* Are the counts even possible for a file this size?  The converter stores
+ * node ids as uint32, so a valid file cannot claim more nodes than that, and
+ * each edge occupies at least 4 bytes. */
+static int check_header_counts(const csr_graph *g, long actual, const char *path)
+{
+    if (g->n_nodes == 0 || g->n_nodes > UINT32_MAX ||
+        g->n_edges > (uint64_t)actual / sizeof(uint32_t)) {
+        fprintf(stderr, "%s: header claims %" PRIu64 " nodes and %" PRIu64 " edges, "
+                        "which cannot fit in %ld bytes\n",
+                path, g->n_nodes, g->n_edges, actual);
+        return -1;
+    }
+    return 0;
+}
+
+/* Does the file measure exactly what the header implies?  Rejects a truncated
+ * or corrupt file before anything is allocated from its numbers, and makes the
+ * reads in csr_load() unable to come up short.  Only safe once
+ * check_header_counts() has bounded the counts. */
+static int check_header_size(const csr_graph *g, long actual, const char *path)
+{
+    uint64_t expected = (uint64_t)CSR_MAGIC_LEN
+                      + 2 * sizeof(uint64_t)
+                      + (g->n_nodes + 1) * sizeof(uint64_t)
+                      + g->n_edges * sizeof(uint32_t)
+                      + g->n_nodes * sizeof(uint32_t);
+
+    if (expected != (uint64_t)actual) {
+        fprintf(stderr, "%s: size mismatch (header implies %" PRIu64 " bytes, file has %ld)\n",
+                path, expected, actual);
+        return -1;
+    }
+    return 0;
+}
+
 int csr_load(const char *path, csr_graph *g)
 {
     FILE *f;
     char magic[CSR_MAGIC_LEN];
     uint64_t header[2];
-    uint64_t expected;
     long actual;
 
     memset(g, 0, sizeof(*g));
@@ -114,28 +177,11 @@ int csr_load(const char *path, csr_graph *g)
     g->n_nodes = header[0];
     g->n_edges = header[1];
 
-    /* The converter stores node ids as uint32, so a valid file cannot claim
-     * more nodes than that.  Bounding n_edges by the file size keeps the
-     * size arithmetic below from overflowing on a corrupt header. */
-    if (g->n_nodes == 0 || g->n_nodes > UINT32_MAX ||
-        g->n_edges > (uint64_t)actual / sizeof(uint32_t)) {
-        fprintf(stderr, "%s: header claims %" PRIu64 " nodes and %" PRIu64 " edges, "
-                        "which cannot fit in %ld bytes\n",
-                path, g->n_nodes, g->n_edges, actual);
-        goto fail;
-    }
-
-    /* Cross-check the header against the real file size.  This rejects a
-     * truncated or corrupt file before we allocate anything from its
-     * numbers, and makes the reads below unable to come up short. */
-    expected = (uint64_t)CSR_MAGIC_LEN
-             + 2 * sizeof(uint64_t)
-             + (g->n_nodes + 1) * sizeof(uint64_t)
-             + g->n_edges * sizeof(uint32_t)
-             + g->n_nodes * sizeof(uint32_t);
-    if (expected != (uint64_t)actual) {
-        fprintf(stderr, "%s: size mismatch (header implies %" PRIu64 " bytes, file has %ld)\n",
-                path, expected, actual);
+    /* || short-circuits, so the size check never runs on counts the first
+     * check has already rejected -- which is what keeps its arithmetic from
+     * overflowing. */
+    if (check_header_counts(g, actual, path) != 0 ||
+        check_header_size(g, actual, path) != 0) {
         goto fail;
     }
 
