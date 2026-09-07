@@ -68,3 +68,16 @@ build/
 # (soc-LiveJournal1 alone is ~150 MB), but results/bench.csv is a few kB and
 # is the data behind the tables in the report, so it is kept.
 results/*.ranks.txt
+
+# LaTeX auxiliary files (the .tex and the built .pdf are kept)
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
