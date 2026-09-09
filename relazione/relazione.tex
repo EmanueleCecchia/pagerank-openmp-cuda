@@ -88,7 +88,7 @@ importanti puntano ad esso. Nato per ordinare le pagine web in base alla
 struttura dei collegamenti ipertestuali~\cite{page1999}, viene oggi
 applicato anche a reti sociali, reti di citazioni e reti biologiche.
 
-La definizione è circolare e si scioglie iterativamente: si parte da una
+La definizione è ricorsiva e si risolve iterativamente: si parte da una
 distribuzione uniforme e la si raffina finché non cambia più --- in
 pratica, finché la variazione non scende sotto una soglia prefissata,
 oppure fino a un numero massimo di iterazioni. Equivale al
@@ -98,8 +98,7 @@ Ne discendono due proprietà della formula --- il totale vale 1, perché il
 navigatore è sempre da qualche parte, e un collegamento pesa tanto meno
 quanti più ne partono dalla stessa pagina.
 
-Formalmente, dato un grafo orientato $G=(V,E)$ con $N=|V|$, il vettore dei
-rank $\mathrm{PR}$ è il punto fisso dell'iterazione
+Formalmente, dato un grafo orientato $G=(V,E)$ con $N=|V|$,
 \begin{equation}
 \mathrm{PR}_{t+1}(v) \;=\; \frac{1-d}{N}
 \;+\; d\left( \sum_{u \,:\, u \to v} \frac{\mathrm{PR}_t(u)}{\mathrm{outdeg}(u)}
@@ -110,23 +109,15 @@ dove i simboli hanno il seguente significato:
 \begin{center}
 \begin{tabular}{@{}ll@{}}
 \toprule
-$\mathrm{PR}_t(v)$ & punteggio del nodo $v$ alla $t$-esima iterazione \\
+$\mathrm{PR}_t(v)$ & \emph{PageRank}: punteggio del nodo $v$ alla $t$-esima iterazione \\
 $\mathrm{outdeg}(u)$ & numero di archi uscenti da $u$ \\
 $d$ & \emph{damping factor}, convenzionalmente $0{,}85$ \\
 $\mathrm{DM}_t$ & \emph{dangling mass}: punteggio complessivo dei nodi senza archi uscenti \\
+ & $\mathrm{DM}_t=\sum_{u\,:\,\mathrm{outdeg}(u)=0}\mathrm{PR}_t(u)$ \\
 $N$ & numero di nodi \\
 \bottomrule
 \end{tabular}
 \end{center}
-
-\noindent con
-$\mathrm{DM}_t=\sum_{u\,:\,\mathrm{outdeg}(u)=0}\mathrm{PR}_t(u)$.
-
-I tre addendi sono i tre modi in cui un nodo riceve punteggio: una quota
-uguale per tutti (il salto casuale del navigatore), il contributo dei
-predecessori, e la redistribuzione della \emph{dangling mass} discussa qui
-sotto. Il damping factor governa anche la convergenza: con $d<1$
-l'iterazione è una contrazione, quindi il punto fisso esiste ed è unico.
 
 \subsection{Il termine dangling}
 Il termine $\mathrm{DM}_t/N$ non è un dettaglio implementativo ma una necessità
