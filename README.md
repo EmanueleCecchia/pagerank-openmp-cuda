@@ -1,8 +1,11 @@
 # PageRank on Hybrid Architectures (OpenMP + CUDA)
 
-Implementation and profiling of the PageRank algorithm, benchmarking a
-pure-OpenMP (CPU-only) implementation against a hybrid OpenMP+CUDA
-implementation that splits work between host and device.
+Implementation and profiling of the PageRank algorithm across three
+versions: a sequential baseline, a pure-OpenMP (CPU-only) implementation,
+and a hybrid OpenMP+CUDA implementation that splits work between host and
+device. The sequential and OpenMP versions are built from the same source
+and differ only in compiler flags, so the baseline every speedup is
+measured against cannot drift from the parallel code.
 
 ## Datasets
 
@@ -157,6 +160,8 @@ Use `--binary build/pagerank_omp` to check the parallel build instead.
 ## Project structure
 
 - `src/` — C sources (`csr.*` loader, `pagerank.*` kernel, `main.c` driver)
-- `tools/` — Python helpers (dataset conversion, correctness verification)
+- `tools/` — Python helpers (dataset conversion, verification, plots, benchmarks)
+- `relazione/` — the report (LaTeX source and compiled PDF)
+- `results/` — `bench.csv` with every run; rank vectors are gitignored
 - `data/` — downloaded datasets (gitignored)
 - `build/` — compiled binaries (gitignored)

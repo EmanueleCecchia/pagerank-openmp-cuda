@@ -10,6 +10,7 @@
 \usepackage{lmodern}
 \usepackage[margin=2.6cm]{geometry}
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{listings}
@@ -55,9 +56,13 @@
 \section*{Abstract}
 % =====================================================================
 Il progetto implementa e analizza l'algoritmo PageRank su architetture
-parallele, confrontando una versione puramente multicore basata su OpenMP
-con una versione ibrida che distribuisce il carico fra CPU e GPU tramite
-CUDA. Il grafo è memorizzato in formato CSR trasposto, scelta che rende il
+parallele, confrontando tre versioni: una sequenziale, che fa da
+riferimento per ogni misura di speed-up, una puramente multicore basata su
+OpenMP e una ibrida che distribuisce il carico fra CPU e GPU tramite CUDA.
+Sequenziale e OpenMP condividono lo stesso file sorgente e differiscono
+solo per le opzioni di compilazione, così che il riferimento non possa
+divergere dal codice parallelo né essere falsato dai costi di gestione dei
+thread. Il grafo è memorizzato in formato CSR trasposto, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
 implementazioni indipendenti. Le misure sulla versione OpenMP mostrano uno
@@ -83,20 +88,48 @@ importanti puntano ad esso. Nato per ordinare le pagine web in base alla
 struttura dei collegamenti ipertestuali~\cite{page1999}, viene oggi
 applicato anche a reti sociali, reti di citazioni e reti biologiche.
 
+La definizione è circolare e si scioglie iterativamente: si parte da una
+distribuzione uniforme e la si raffina finché non cambia più --- in
+pratica, finché la variazione non scende sotto una soglia prefissata,
+oppure fino a un numero massimo di iterazioni. Equivale al
+modello del \emph{navigatore casuale}, che segue collegamenti scelti a caso:
+il PageRank è la frazione di tempo che costui trascorre su ciascuna pagina.
+Ne discendono due proprietà della formula --- il totale vale 1, perché il
+navigatore è sempre da qualche parte, e un collegamento pesa tanto meno
+quanti più ne partono dalla stessa pagina.
+
 Formalmente, dato un grafo orientato $G=(V,E)$ con $N=|V|$, il vettore dei
-rank $\pi$ è il punto fisso dell'iterazione
+rank $\mathrm{PR}$ è il punto fisso dell'iterazione
 \begin{equation}
-\pi_{t+1}(v) \;=\; \frac{1-d}{N}
-\;+\; d\left( \sum_{u \,:\, u \to v} \frac{\pi_t(u)}{\mathrm{outdeg}(u)}
-\;+\; \frac{D_t}{N} \right)
+\mathrm{PR}_{t+1}(v) \;=\; \frac{1-d}{N}
+\;+\; d\left( \sum_{u \,:\, u \to v} \frac{\mathrm{PR}_t(u)}{\mathrm{outdeg}(u)}
+\;+\; \frac{\mathrm{DM}_t}{N} \right)
 \label{eq:pagerank}
 \end{equation}
-dove $d$ è il \emph{damping factor} (convenzionalmente $0{,}85$) e
-$D_t=\sum_{u\,:\,\mathrm{outdeg}(u)=0}\pi_t(u)$ è la massa di rank che si
-trova sui nodi \emph{dangling}, cioè privi di archi uscenti.
+dove i simboli hanno il seguente significato:
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$\mathrm{PR}_t(v)$ & punteggio del nodo $v$ alla $t$-esima iterazione \\
+$\mathrm{outdeg}(u)$ & numero di archi uscenti da $u$ \\
+$d$ & \emph{damping factor}, convenzionalmente $0{,}85$ \\
+$\mathrm{DM}_t$ & \emph{dangling mass}: punteggio complessivo dei nodi senza archi uscenti \\
+$N$ & numero di nodi \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent con
+$\mathrm{DM}_t=\sum_{u\,:\,\mathrm{outdeg}(u)=0}\mathrm{PR}_t(u)$.
+
+I tre addendi sono i tre modi in cui un nodo riceve punteggio: una quota
+uguale per tutti (il salto casuale del navigatore), il contributo dei
+predecessori, e la redistribuzione della \emph{dangling mass} discussa qui
+sotto. Il damping factor governa anche la convergenza: con $d<1$
+l'iterazione è una contrazione, quindi il punto fisso esiste ed è unico.
 
 \subsection{Il termine dangling}
-Il termine $D_t/N$ non è un dettaglio implementativo ma una necessità
+Il termine $\mathrm{DM}_t/N$ non è un dettaglio implementativo ma una necessità
 matematica. Un nodo senza archi uscenti non ha modo di ridistribuire il
 proprio rank: ignorandolo, ad ogni iterazione una frazione della massa
 totale sparirebbe e il vettore cesserebbe di essere una distribuzione di
@@ -104,31 +137,77 @@ probabilità. Nei dataset utilizzati questo non è un caso limite: il
 $15{,}6\%$ dei nodi di \texttt{web-Google} e l'$11{,}1\%$ di
 \texttt{soc-LiveJournal1} sono dangling (Tabella~\ref{tab:dataset}).
 
-La conseguenza pratica è che $\sum_v \pi(v) = 1$ costituisce un test di
+La conseguenza pratica è che $\sum_v \mathrm{PR}(v) = 1$ costituisce un test di
 correttezza immediato e molto sensibile: il programma lo stampa ad ogni
 esecuzione.
+
+\subsection{Forma matriciale}
+\label{sec:matriciale}
+
+La stessa iterazione si scrive in forma vettoriale. Sia $\mathbf{MT} \in \mathbb{R}^{N \times N}$ la \emph{matrice di
+transizione} definita da
+\begin{equation}
+\mathrm{MT}_{vu} =
+\begin{cases}
+1/\mathrm{outdeg}(u) & \text{se esiste l'arco } u \to v,\\[2pt]
+0 & \text{altrimenti,}
+\end{cases}
+\end{equation}
+e sia $\mathbf{1}$ il vettore di tutti uni. Detto $\mathbf{PR}_t$ il
+vettore dei punteggi, l'iterazione~\eqref{eq:pagerank} diventa
+\begin{equation}
+\mathbf{PR}_{t+1} \;=\; \frac{1-d}{N}\,\mathbf{1}
+\;+\; d\left( \mathbf{MT}\,\mathbf{PR}_t + \frac{\mathrm{DM}_t}{N}\,\mathbf{1} \right),
+\qquad \mathrm{DM}_t = \mathbf{w}^{\!\top} \mathbf{PR}_t
+\label{eq:matriciale}
+\end{equation}
+dove $\mathbf{w}$ è il vettore indicatore dei nodi dangling ($w_u=1$ se
+$\mathrm{outdeg}(u)=0$, altrimenti $0$).
+
+Ogni colonna di $\mathbf{MT}$ somma a 1, tranne quelle dei nodi dangling che
+sono nulle: è questa mancanza a richiedere il termine correttivo. La
+formulazione classica lo assorbe in un'unica \emph{matrice di Google}
+\begin{equation}
+\mathbf{G} \;=\; d\left(\mathbf{MT} + \tfrac{1}{N}\mathbf{1}\mathbf{w}^{\!\top}\right)
+\;+\; \tfrac{1-d}{N}\,\mathbf{1}\mathbf{1}^{\!\top},
+\qquad \mathbf{PR} = \mathbf{G}\,\mathbf{PR}.
+\end{equation}
+$\mathbf{G}$ è stocastica per colonne e positiva, quindi per Perron--Frobenius
+ha autovalore dominante 1 con autovettore unico: il PageRank \emph{è}
+quell'autovettore, e l'iterazione è il \emph{metodo delle potenze} applicato
+a $\mathbf{G}$.
+
+\paragraph{Perché non si costruisce $\mathbf{G}$.}
+$\mathbf{G}$ è elegante ma inutilizzabile: i termini
+$\mathbf{1}\mathbf{w}^{\!\top}$ e $\mathbf{1}\mathbf{1}^{\!\top}$ sono densi,
+quindi avrebbe $N^2$ non nulli --- $5{,}6$~TB per \texttt{web-Google}. Si usa
+perciò la forma~\eqref{eq:matriciale}, dove l'unica matrice è $\mathbf{MT}$,
+sparsa e memorizzata in CSR (Sezione~\ref{sec:csr}), mentre i contributi
+densi si riducono a due scalari. Il prodotto $\mathbf{MT}\,\mathbf{PR}_t$ è
+una moltiplicazione matrice-sparsa per vettore (SpMV): è questa l'operazione
+che il progetto parallelizza.
 
 \subsection{Algoritmo sequenziale}
 \begin{algorithm}[H]
 \caption{PageRank per iterazione di potenza (formulazione \emph{pull})}
 \label{alg:seq}
 \begin{algorithmic}[1]
-\State $\pi(v) \gets 1/N$ \textbf{per ogni} $v \in V$
+\State $\mathrm{PR}(v) \gets 1/N$ \textbf{per ogni} $v \in V$
 \Repeat
-  \State $D \gets 0$
+  \State $\mathrm{DM} \gets 0$
   \ForAll{$u \in V$}
     \If{$\mathrm{outdeg}(u) = 0$}
-      \State $c(u) \gets 0$; \quad $D \gets D + \pi(u)$
+      \State $c(u) \gets 0$; \quad $\mathrm{DM} \gets \mathrm{DM} + \mathrm{PR}(u)$
     \Else
-      \State $c(u) \gets \pi(u)/\mathrm{outdeg}(u)$
+      \State $c(u) \gets \mathrm{PR}(u)/\mathrm{outdeg}(u)$
     \EndIf
   \EndFor
-  \State $\mathit{base} \gets (1-d)/N + d\cdot D/N$
+  \State $\mathit{base} \gets (1-d)/N + d\cdot \mathrm{DM}/N$
   \ForAll{$v \in V$}
-    \State $\pi'(v) \gets \mathit{base} + d \sum_{u \to v} c(u)$
+    \State $\mathrm{PR}'(v) \gets \mathit{base} + d \sum_{u \to v} c(u)$
   \EndFor
-  \State $\varepsilon \gets \sum_v |\pi'(v)-\pi(v)|$
-  \State scambia $\pi$ e $\pi'$
+  \State $\varepsilon \gets \sum_v |\mathrm{PR}'(v)-\mathrm{PR}(v)|$
+  \State scambia $\mathrm{PR}$ e $\mathrm{PR}'$
 \Until{$\varepsilon < \mathit{tolleranza}$}
 \end{algorithmic}
 \end{algorithm}
@@ -170,16 +249,16 @@ eseguito, senza bisogno di alcun caso speciale.
 \paragraph{Perché il trasposto.}
 La scelta progettuale più importante del progetto è \emph{quale} indice
 diventa la riga. L'equazione~\eqref{eq:pagerank} richiede, per calcolare
-$\pi_{t+1}(v)$, l'insieme dei nodi che puntano a $v$. Esistono due modi di
+$\mathrm{PR}_{t+1}(v)$, l'insieme dei nodi che puntano a $v$. Esistono due modi di
 organizzare il calcolo:
 
 \begin{description}
   \item[Push] si scorre l'insieme degli archi $u \to v$ e si somma il
-    contributo di $u$ dentro $\pi'(v)$. Più archi convergono sullo stesso
+    contributo di $u$ dentro $\mathrm{PR}'(v)$. Più archi convergono sullo stesso
     $v$, quindi più thread scrivono sulla stessa cella: si genera una
     \emph{race condition} che richiede operazioni atomiche o lock.
   \item[Pull] si scorre l'insieme dei nodi $v$, si leggono i suoi
-    predecessori e si scrive $\pi'(v)$ una sola volta. Ogni nodo è di
+    predecessori e si scrive $\mathrm{PR}'(v)$ una sola volta. Ogni nodo è di
     competenza di un solo thread: \textbf{non esiste alcuna scrittura
     concorrente}.
 \end{description}
