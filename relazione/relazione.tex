@@ -119,18 +119,27 @@ $N$ & numero di nodi \\
 \end{tabular}
 \end{center}
 
-\subsection{Il termine dangling}
-Il termine $\mathrm{DM}_t/N$ non è un dettaglio implementativo ma una necessità
-matematica. Un nodo senza archi uscenti non ha modo di ridistribuire il
-proprio rank: ignorandolo, ad ogni iterazione una frazione della massa
+\subsection{Damping factor e Dangling Mass}
+\paragraph{}
+Il termine $(1-d)/N$: un gruppo di pagine che si citano solo fra loro assorbirebbe, iterazione dopo
+iterazione, tutto il punteggio del grafo, perché i collegamenti vi entrano
+e nessuno ne esce. Con probabilità $1-d$ il navigatore abbandona i
+collegamenti e salta su una pagina qualsiasi: questo impedisce l'accumulo e
+rende ogni nodo raggiungibile da ogni altro. È anche l'unica via
+d'uscita da un nodo senza archi uscenti, dove con $d=1$ il navigatore
+resterebbe intrappolato per sempre.
+
+\paragraph{}
+Il termine $\mathrm{DM}_t/N$: un nodo senza archi uscenti non ha modo di ridistribuire il
+proprio rank. Il salto casuale lo libera con probabilità $1-d$, ma la
+quota $d$ restante cercherebbe un collegamento che non esiste: è questa
+che il termine raccoglie e ridistribuisce. Ignorandolo, ad ogni iterazione una frazione della massa
 totale sparirebbe e il vettore cesserebbe di essere una distribuzione di
 probabilità. Nei dataset utilizzati questo non è un caso limite: il
 $15{,}6\%$ dei nodi di \texttt{web-Google} e l'$11{,}1\%$ di
 \texttt{soc-LiveJournal1} sono dangling (Tabella~\ref{tab:dataset}).
-
 La conseguenza pratica è che $\sum_v \mathrm{PR}(v) = 1$ costituisce un test di
-correttezza immediato e molto sensibile: il programma lo stampa ad ogni
-esecuzione.
+correttezza.
 
 \subsection{Forma matriciale}
 \label{sec:matriciale}
