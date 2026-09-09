@@ -141,6 +141,12 @@ $15{,}6\%$ dei nodi di \texttt{web-Google} e l'$11{,}1\%$ di
 La conseguenza pratica è che $\sum_v \mathrm{PR}(v) = 1$ costituisce un test di
 correttezza.
 
+\paragraph{}
+Con entrambi i termini l'iterazione descrive una catena di Markov sui nodi
+del grafo: da ogni nodo --- cicli chiusi e
+vicoli ciechi compresi --- si può sempre raggiungere qualunque altro. Questo ci
+garantisce un'unica distribuzione stazionaria.
+
 \subsection{Forma matriciale}
 \label{sec:matriciale}
 
@@ -154,7 +160,7 @@ transizione} definita da
 \end{cases}
 \end{equation}
 e sia $\mathbf{1}$ il vettore di tutti uni. Detto $\mathbf{PR}_t$ il
-vettore dei punteggi, l'iterazione~\eqref{eq:pagerank} diventa
+vettore dei punteggi (PR(1), ... , PR(N)), l'iterazione~\eqref{eq:pagerank} diventa
 \begin{equation}
 \mathbf{PR}_{t+1} \;=\; \frac{1-d}{N}\,\mathbf{1}
 \;+\; d\left( \mathbf{MT}\,\mathbf{PR}_t + \frac{\mathrm{DM}_t}{N}\,\mathbf{1} \right),
@@ -165,27 +171,16 @@ dove $\mathbf{w}$ è il vettore indicatore dei nodi dangling ($w_u=1$ se
 $\mathrm{outdeg}(u)=0$, altrimenti $0$).
 
 Ogni colonna di $\mathbf{MT}$ somma a 1, tranne quelle dei nodi dangling che
-sono nulle: è questa mancanza a richiedere il termine correttivo. La
-formulazione classica lo assorbe in un'unica \emph{matrice di Google}
-\begin{equation}
-\mathbf{G} \;=\; d\left(\mathbf{MT} + \tfrac{1}{N}\mathbf{1}\mathbf{w}^{\!\top}\right)
-\;+\; \tfrac{1-d}{N}\,\mathbf{1}\mathbf{1}^{\!\top},
-\qquad \mathbf{PR} = \mathbf{G}\,\mathbf{PR}.
-\end{equation}
-$\mathbf{G}$ è stocastica per colonne e positiva, quindi per Perron--Frobenius
-ha autovalore dominante 1 con autovettore unico: il PageRank \emph{è}
-quell'autovettore, e l'iterazione è il \emph{metodo delle potenze} applicato
-a $\mathbf{G}$.
+sono nulle: è questa mancanza a richiedere il termine correttivo.
 
-\paragraph{Perché non si costruisce $\mathbf{G}$.}
-$\mathbf{G}$ è elegante ma inutilizzabile: i termini
-$\mathbf{1}\mathbf{w}^{\!\top}$ e $\mathbf{1}\mathbf{1}^{\!\top}$ sono densi,
-quindi avrebbe $N^2$ non nulli --- $5{,}6$~TB per \texttt{web-Google}. Si usa
+\paragraph{Perché non si costruisce una matrice esplicita.}
+Assorbire i due termini correttivi in un'unica matrice è possibile, ma la
+renderebbe densa: $N^2$ non nulli --- $5{,}6$~TB per \texttt{web-Google}. Si usa
 perciò la forma~\eqref{eq:matriciale}, dove l'unica matrice è $\mathbf{MT}$,
 sparsa e memorizzata in CSR (Sezione~\ref{sec:csr}), mentre i contributi
 densi si riducono a due scalari. Il prodotto $\mathbf{MT}\,\mathbf{PR}_t$ è
-una moltiplicazione matrice-sparsa per vettore (SpMV): è questa l'operazione
-che il progetto parallelizza.
+una moltiplicazione matrice-sparsa per vettore (SpMV, Sparse Matrix-Vector
+Multiplication): è questa l'operazione che il progetto parallelizza.
 
 \subsection{Algoritmo sequenziale}
 \begin{algorithm}[H]
