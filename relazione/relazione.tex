@@ -16,7 +16,7 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{algorithm}
-\usepackage{algpseudocode}
+\usepackage[indLines=true,noEnd=false]{algpseudocodex}
 \usepackage[hidelinks]{hyperref}
 
 % margine di elasticita': gli identificatori in \texttt{} non sono sillababili
@@ -31,6 +31,9 @@
     \end{minipage}}%
   \par\vspace{4pt}%
 }
+
+% ---- stacco fra capoversi, senza rientro --------------------------
+\newcommand{\stacco}{\par\medskip\noindent}
 
 % ---- stile per i listati di codice ----------------------------------
 \definecolor{cmtgray}{gray}{0.45}
@@ -102,7 +105,7 @@ Formalmente, dato un grafo orientato $G=(V,E)$ con $N=|V|$,
 \begin{equation}
 \mathrm{PR}_{t+1}(v) \;=\; \frac{1-d}{N}
 \;+\; d\left( \sum_{u \,:\, u \to v} \frac{\mathrm{PR}_t(u)}{\mathrm{outdeg}(u)}
-\;+\; \frac{\mathrm{DM}_t}{N} \right)
+\;+\; \frac{\mathrm{dangling}_t}{N} \right)
 \label{eq:pagerank}
 \end{equation}
 dove i simboli hanno il seguente significato:
@@ -112,15 +115,15 @@ dove i simboli hanno il seguente significato:
 $\mathrm{PR}_t(v)$ & \emph{PageRank}: punteggio del nodo $v$ alla $t$-esima iterazione \\
 $\mathrm{outdeg}(u)$ & numero di archi uscenti da $u$ \\
 $d$ & \emph{damping factor}, convenzionalmente $0{,}85$ \\
-$\mathrm{DM}_t$ & \emph{dangling mass}: punteggio complessivo dei nodi senza archi uscenti \\
- & $\mathrm{DM}_t=\sum_{u\,:\,\mathrm{outdeg}(u)=0}\mathrm{PR}_t(u)$ \\
+$\mathrm{dangling}_t$ & \emph{dangling mass}: punteggio complessivo dei nodi senza archi uscenti \\
+ & $\mathrm{dangling}_t=\sum_{u\,:\,\mathrm{outdeg}(u)=0}\mathrm{PR}_t(u)$ \\
 $N$ & numero di nodi \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \subsection{Damping factor e Dangling Mass}
-\paragraph{}
+\stacco
 Il termine $(1-d)/N$: un gruppo di pagine che si citano solo fra loro assorbirebbe, iterazione dopo
 iterazione, tutto il punteggio del grafo, perché i collegamenti vi entrano
 e nessuno ne esce. Con probabilità $1-d$ il navigatore abbandona i
@@ -129,8 +132,8 @@ rende ogni nodo raggiungibile da ogni altro. È anche l'unica via
 d'uscita da un nodo senza archi uscenti, dove con $d=1$ il navigatore
 resterebbe intrappolato per sempre.
 
-\paragraph{}
-Il termine $\mathrm{DM}_t/N$: un nodo senza archi uscenti non ha modo di ridistribuire il
+\stacco
+Il termine $\mathrm{dangling}_t/N$: un nodo senza archi uscenti non ha modo di ridistribuire il
 proprio rank. Il salto casuale lo libera con probabilità $1-d$, ma la
 quota $d$ restante cercherebbe un collegamento che non esiste: è questa
 che il termine raccoglie e ridistribuisce. Ignorandolo, ad ogni iterazione una frazione della massa
@@ -141,7 +144,7 @@ $15{,}6\%$ dei nodi di \texttt{web-Google} e l'$11{,}1\%$ di
 La conseguenza pratica è che $\sum_v \mathrm{PR}(v) = 1$ costituisce un test di
 correttezza.
 
-\paragraph{}
+\stacco
 Con entrambi i termini l'iterazione descrive una catena di Markov sui nodi
 del grafo: da ogni nodo --- cicli chiusi e
 vicoli ciechi compresi --- si può sempre raggiungere qualunque altro. Questo ci
@@ -163,14 +166,14 @@ e sia $\mathbf{1}$ il vettore di tutti uni. Detto $\mathbf{PR}_t$ il
 vettore dei punteggi (PR(1), ... , PR(N)), l'iterazione~\eqref{eq:pagerank} diventa
 \begin{equation}
 \mathbf{PR}_{t+1} \;=\; \frac{1-d}{N}\,\mathbf{1}
-\;+\; d\left( \mathbf{MT}\,\mathbf{PR}_t + \frac{\mathrm{DM}_t}{N}\,\mathbf{1} \right),
-\qquad \mathrm{DM}_t = \mathbf{w}^{\!\top} \mathbf{PR}_t
+\;+\; d\left( \mathbf{MT}\,\mathbf{PR}_t + \frac{\mathrm{dangling}_t}{N}\,\mathbf{1} \right),
+\qquad \mathrm{dangling}_t = \mathbf{w}^{\!\top} \mathbf{PR}_t
 \label{eq:matriciale}
 \end{equation}
 dove $\mathbf{w}$ è il vettore indicatore dei nodi dangling ($w_u=1$ se
 $\mathrm{outdeg}(u)=0$, altrimenti $0$).
 
-\paragraph{}
+\stacco
 Il prodotto $\mathbf{MT}\,\mathbf{PR}_t$ che compare
 nella~\eqref{eq:matriciale} è una moltiplicazione matrice-sparsa per vettore
 (SpMV, Sparse Matrix-Vector Multiplication): una matrice sparsa moltiplica
@@ -180,32 +183,71 @@ parallelizza. Per non pagare gli zeri né in spazio né in tempo si
 memorizzano i soli valori non nulli di $\mathbf{MT}$, usando formati come
 CSR (Compressed Sparse Row), che vedremo nella Sezione~\ref{sec:csr}. 
 
-\subsection{Algoritmo sequenziale}
+\subsection{Algoritmo}
 \begin{algorithm}[H]
 \caption{PageRank per iterazione di potenza (formulazione \emph{pull})}
 \label{alg:seq}
 \begin{algorithmic}[1]
-\State $\mathrm{PR}(v) \gets 1/N$ \textbf{per ogni} $v \in V$
+\State $\mathrm{PR}[v] \gets 1/N$ \textbf{per ogni} $v \in V$
 \Repeat
-  \State $\mathrm{DM} \gets 0$
+  \State $\mathrm{dangling} \gets 0$
   \ForAll{$u \in V$}
-    \If{$\mathrm{outdeg}(u) = 0$}
-      \State $c(u) \gets 0$; \quad $\mathrm{DM} \gets \mathrm{DM} + \mathrm{PR}(u)$
+    \If{$\mathrm{outdeg}[u] = 0$}
+      \State $\mathrm{contrib}[u] \gets 0$; \quad $\mathrm{dangling} \gets \mathrm{dangling} + \mathrm{PR}[u]$
     \Else
-      \State $c(u) \gets \mathrm{PR}(u)/\mathrm{outdeg}(u)$
+      \State $\mathrm{contrib}[u] \gets \mathrm{PR}[u]/\mathrm{outdeg}[u]$
     \EndIf
   \EndFor
-  \State $\mathit{base} \gets (1-d)/N + d\cdot \mathrm{DM}/N$
+  \State $\mathit{base} \gets (1-d)/N + d\cdot \mathrm{dangling}/N$
   \ForAll{$v \in V$}
-    \State $\mathrm{PR}'(v) \gets \mathit{base} + d \sum_{u \to v} c(u)$
+    \State $\mathrm{PR}'[v] \gets \mathit{base} + d \sum_{u \to v} \mathrm{contrib}[u]$
   \EndFor
-  \State $\varepsilon \gets \sum_v |\mathrm{PR}'(v)-\mathrm{PR}(v)|$
+  \State $\varepsilon \gets \sum_v |\mathrm{PR}'[v]-\mathrm{PR}[v]|$
   \State scambia $\mathrm{PR}$ e $\mathrm{PR}'$
 \Until{$\varepsilon < \mathit{tolleranza}$}
 \end{algorithmic}
 \end{algorithm}
 
-Il calcolo di $c(u)$ è separato dal ciclo di accumulo per una ragione di
+\begin{center}
+\begin{tabular}{@{}l p{0.75\linewidth}@{}}
+\toprule
+$N$, $d$ & numero di nodi e damping factor: scalari, costanti per tutta l'esecuzione \\
+$\mathrm{PR}[v]$ & punteggio corrente del nodo $v$; $\mathrm{PR}$ è un vettore di $N$ componenti, una per nodo \\
+$\mathrm{PR}'[v]$ & punteggio di $v$ calcolato nell'iterazione in corso; vettore di appoggio, della stessa forma di $\mathrm{PR}$ \\
+$\mathrm{contrib}[u]$ & contributo che $u$ manda lungo ciascuno dei suoi archi uscenti; vettore di $N$ componenti, ricalcolato ad ogni iterazione \\
+$\mathrm{outdeg}[u]$ & numero di archi uscenti da $u$; vettore di $N$ componenti, proprietà fissa del grafo \\
+$\mathrm{dangling}$ & \emph{dangling mass}: scalare, punteggio complessivo dei nodi senza archi uscenti \\
+$\mathit{base}$ & scalare, quota di punteggio che spetta a ogni nodo indipendentemente dagli archi \\
+$\varepsilon$ & scalare, variazione complessiva fra un'iterazione e la successiva \\
+\bottomrule
+\end{tabular} 
+\end{center} 
+
+\stacco
+Ogni iterazione ricostruisce il vettore dei punteggi a partire da quello
+precedente, con due passaggi sui nodi. Nel primo ogni nodo è visto come
+sorgente: si calcola quanto manda lungo ciascun arco uscente e si raccoglie
+al tempo stesso la dangling mass. Nel secondo ogni nodo è visto come
+destinazione: si sommano i contributi che arrivano dai suoi predecessori. Si
+ripete finché la variazione complessiva non scende sotto la tolleranza. Il ciclo è il \emph{metodo delle potenze}: si rimoltiplica il vettore
+finché non si stabilizza, e non serve normalizzarlo a ogni passo perché
+l'iterazione conserva da sé la somma a 1. \emph{Pull} indica invece che ogni
+nodo legge dai predecessori anziché scrivere nei successori, scelta motivata
+nella Sezione~\ref{sec:csr}.
+
+\stacco 
+Esplicitando $\mathit{base}$, il calcolo di $\mathrm{PR}'[v]$ è esattamente
+l'iterazione~\eqref{eq:pagerank}:
+\[
+\mathrm{PR}'[v] \;=\;
+\underbrace{\frac{1-d}{N} \;+\; d\,\frac{\mathrm{dangling}}{N}}_{\mathit{base}}
+\;+\; d \sum_{u \,:\, u \to v} \mathrm{contrib}[u]
+\]
+dove $\mathrm{contrib}[u] = \mathrm{PR}[u]/\mathrm{outdeg}[u]$ per i nodi con archi
+uscenti, e $\mathrm{contrib}[u] = 0$ per i dangling, il cui punteggio confluisce invece in
+$\mathrm{dangling}$. 
+
+Il calcolo di $\mathrm{contrib}[u]$ è separato dal ciclo di accumulo per una ragione di
 costo: eseguito così richiede $N$ divisioni per iterazione anziché $M=|E|$,
 e nei grafi considerati $M \gg N$ (su \texttt{soc-LiveJournal1}, 69 milioni
 contro 4,8 milioni). La divisione è fra le operazioni aritmetiche più lente,
@@ -215,7 +257,7 @@ quindi il risparmio è reale.
 La difficoltà del problema è interamente di scala. Il grafo non può essere
 rappresentato con una matrice densa $N \times N$: per \texttt{web-Google}
 servirebbero $875\,713^2 \times 8$ byte $\approx 5{,}6$~TB, di cui oltre il
-$99{,}99\%$ occupati da zeri, dato che il grado medio è circa 6. È quindi
+$99{,}99\%$ occupati da zeri. È quindi
 necessaria una rappresentazione sparsa, e il calcolo va distribuito su più
 unità di elaborazione per ottenere tempi accettabili al crescere
 dell'istanza.
