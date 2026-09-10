@@ -170,17 +170,15 @@ vettore dei punteggi (PR(1), ... , PR(N)), l'iterazione~\eqref{eq:pagerank} dive
 dove $\mathbf{w}$ è il vettore indicatore dei nodi dangling ($w_u=1$ se
 $\mathrm{outdeg}(u)=0$, altrimenti $0$).
 
-Ogni colonna di $\mathbf{MT}$ somma a 1, tranne quelle dei nodi dangling che
-sono nulle: è questa mancanza a richiedere il termine correttivo.
-
-\paragraph{Perché non si costruisce una matrice esplicita.}
-Assorbire i due termini correttivi in un'unica matrice è possibile, ma la
-renderebbe densa: $N^2$ non nulli --- $5{,}6$~TB per \texttt{web-Google}. Si usa
-perciò la forma~\eqref{eq:matriciale}, dove l'unica matrice è $\mathbf{MT}$,
-sparsa e memorizzata in CSR (Sezione~\ref{sec:csr}), mentre i contributi
-densi si riducono a due scalari. Il prodotto $\mathbf{MT}\,\mathbf{PR}_t$ è
-una moltiplicazione matrice-sparsa per vettore (SpMV, Sparse Matrix-Vector
-Multiplication): è questa l'operazione che il progetto parallelizza.
+\paragraph{}
+Il prodotto $\mathbf{MT}\,\mathbf{PR}_t$ che compare
+nella~\eqref{eq:matriciale} è una moltiplicazione matrice-sparsa per vettore
+(SpMV, Sparse Matrix-Vector Multiplication): una matrice sparsa moltiplica
+un vettore denso e ne produce uno nuovo, sempre denso, nella forma generica
+$\mathbf{y}=\mathbf{A}\mathbf{x}$. È questa l'operazione che il progetto
+parallelizza. Per non pagare gli zeri né in spazio né in tempo si
+memorizzano i soli valori non nulli di $\mathbf{MT}$, usando formati come
+CSR (Compressed Sparse Row), che vedremo nella Sezione~\ref{sec:csr}. 
 
 \subsection{Algoritmo sequenziale}
 \begin{algorithm}[H]
