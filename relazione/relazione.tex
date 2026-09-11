@@ -183,7 +183,7 @@ un vettore denso e ne produce uno nuovo, sempre denso, nella forma generica
 $\mathbf{y}=\mathbf{A}\mathbf{x}$. È questa l'operazione che il progetto
 parallelizza. Per non pagare gli zeri né in spazio né in tempo si
 memorizzano i soli valori non nulli di $\mathbf{MT}$, usando formati come
-CSR, che vedremo nella Sezione~\ref{sec:csr}. 
+CSR (Compressed Sparse Row), che vedremo nella Sezione~\ref{sec:csr}. 
 
 \subsection{Algoritmo}
 \begin{algorithm}[H]
@@ -275,9 +275,9 @@ necessario distribuire il calcolo su più unità di elaborazione.
 \subsection{Rappresentazione dei dati: CSR trasposto}
 \label{sec:csr}
 
-Il formato \textbf{CSR} (Compressed Sparse Row), 
-per salvare i valori non nulli della matrice \textbf{MT}, invece di utilizzare 
-una matrice bidimensionale $N \times N$ usa tre array monodimensionali:
+Il formato \textbf{CSR}, per salvare i valori non nulli della matrice
+$\mathbf{MT}$, invece di utilizzare una matrice bidimensionale $N \times N$
+usa tre array monodimensionali:
 \begin{itemize}
   \item \texttt{col\_idx[M]}: gli indici di colonna dei non nulli, letti riga
     per riga; è la concatenazione delle liste di adiacenza, e la porzione
