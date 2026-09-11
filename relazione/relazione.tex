@@ -254,13 +254,17 @@ contro 4,8 milioni). La divisione è fra le operazioni aritmetiche più lente,
 quindi il risparmio è reale.
 
 \subsection{Necessità della parallelizzazione}
-La difficoltà del problema è interamente di scala. Il grafo non può essere
-rappresentato con una matrice densa $N \times N$: per \texttt{web-Google}
-servirebbero $875\,713^2 \times 8$ byte $\approx 5{,}6$~TB, di cui oltre il
-$99{,}99\%$ occupati da zeri. È quindi
-necessaria una rappresentazione sparsa, e il calcolo va distribuito su più
-unità di elaborazione per ottenere tempi accettabili al crescere
-dell'istanza.
+La difficoltà del problema è interamente di scala. La matrice $\mathbf{MT}$
+della Sezione~\ref{sec:matriciale} è \emph{sparsa}: delle sue $N^2$ celle
+solo $M$ sono diverse da zero, e nei grafi reali $M \ll N^2$. Rappresentarla
+come matrice densa $N \times N$ --- una cella per ogni coppia $(v,u)$ ---
+richiederebbe una memoria quadratica in $N$ e occupata quasi per intero da
+zeri, oltre a $N^2$ moltiplicazioni per iterazione anziché $M$. Si adotta
+perciò una rappresentazione \emph{sparsa}, che conservi i soli elementi non
+nulli --- il formato \textbf{CSR} (Compressed Sparse Row) della
+Sezione~\ref{sec:csr}. Restano comunque $M$ archi da percorrere a ogni
+iterazione, e le iterazioni si susseguono fino a convergenza: questo rende necessario distribuire il calcolo su più unità di
+elaborazione.
 
 % =====================================================================
 \section{Metodologia adottata per la soluzione}
