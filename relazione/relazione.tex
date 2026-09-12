@@ -436,10 +436,9 @@ volta per nodo, in un passaggio separato che precede quello sui predecessori:
 a quest'ultimo resta solo da leggere \texttt{contrib[col\_idx[j]]} e
 sommarlo, senza divisioni e senza valori da recuperare. Anche in memoria il
 guadagno viene dallo stesso passaggio da $M$ a $N$, con $N \ll M$: su
-\texttt{soc-LiveJournal1} un \texttt{val[M]} in
-doppia precisione occuperebbe $8 \times M$ byte, cioè circa $552$~MB, mentre
-a \texttt{out\_deg} bastano $4 \times N$ byte, circa $19$~MB: quasi trenta
-volte meno.
+\texttt{soc-LiveJournal1} un \texttt{val[M]} in doppia precisione occuperebbe
+$8 \times M$ byte, cioè circa $526$~MiB, mentre a \texttt{out\_deg} bastano
+$4 \times N$ byte, circa $18{,}5$~MiB: quasi trenta volte meno.
 
 \paragraph{Perché il trasposto.}
 Importante la scelta di quale indice diventa la riga.
@@ -469,7 +468,7 @@ origine, come indice di riga.
 \paragraph{Costo in memoria e modo di accesso.}
 La struttura occupa $8 \times (N{+}1) + 4 \times M + 4 \times N$ byte, ed è
 questa formula a produrre l'ultima colonna della Tabella~\ref{tab:dataset}:
-per \texttt{web-Google} $29{,}5$~MB contro i $5{,}6$~TB della matrice densa.
+per \texttt{web-Google} $29{,}5$~MiB contro i $5{,}6$~TiB della matrice densa.
 Resta però un aspetto che tornerà nella
 Sezione~\ref{sec:scalabilita}. \texttt{row\_ptr} e
 \texttt{col\_idx} si leggono in ordine --- accessi sequenziali, ideali per il
@@ -477,8 +476,8 @@ prefetch del processore --- mentre \texttt{contrib[col\_idx[j]]} è un accesso
 casuale a un vettore che su questi grafi non entra in cache. Per ogni arco si
 legge un indice di 4 byte, si va a prendere un contributo in una posizione
 imprevedibile e si esegue una singola somma: il rapporto fra byte trasferiti e
-operazioni aritmetiche è bassissimo, ed è la ragione di fondo per cui il
-calcolo si rivelerà \emph{memory-bound}.
+operazioni aritmetiche è bassissimo. Quanto questo pesi davvero lo misura la
+Sezione~\ref{sec:scalabilita}.
 
 \subsection{Formato binario e pre-elaborazione}
 La conversione dal formato testuale SNAP al CSR avviene \emph{una volta
@@ -515,8 +514,8 @@ magic \texttt{"PRCSR001"} & \texttt{char[8]}   & 8 byte \\
 \end{center}
 
 \texttt{col\_idx} usa 32 bit anziché 64 perché gli elementi sono $M$: su
-\texttt{soc-LiveJournal1} la scelta dimezza l'occupazione da 552~MB a
-276~MB, ed è sicura perché un indice di nodo è sempre minore di
+\texttt{soc-LiveJournal1} la scelta dimezza l'occupazione da 526~MiB a
+263~MiB, ed è sicura perché un indice di nodo è sempre minore di
 $N < 2^{32}$. Il caricamento lato C si riduce così a tre \texttt{fread},
 senza alcuna conversione.
 
@@ -725,8 +724,8 @@ dei rank resta correttamente silenzioso perché il grafo alterato è
 internamente coerente.
 
 Poiché la matrice densa richiede $N^2$ elementi, questa verifica è
-possibile solo sul grafo più piccolo: 386~MB per \texttt{wiki-Vote} contro
-i 5,6~TB che servirebbero per \texttt{web-Google}. È questa la ragione per
+possibile solo sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro
+i 5,6~TiB che servirebbero per \texttt{web-Google}. È questa la ragione per
 cui \texttt{wiki-Vote} fa parte dell'insieme di test.
 
 % =====================================================================
@@ -764,10 +763,10 @@ nel numero di archi (fattore $670\times$ fra il minimo e il massimo).
 \textbf{Grafo} & \textbf{Nodi} & \textbf{Archi} & \textbf{Dangling} &
 \textbf{max in-deg} & \textbf{CSR} \\
 \midrule
-wiki-Vote        & 7\,115      & 103\,689       & 1\,005      & 457      & 0,5 MB \\
-web-Google       & 875\,713    & 5\,105\,039    & 136\,259    & 6\,326   & 29,5 MB \\
-web-BerkStan     & 685\,230    & 7\,600\,595    & 4\,744      & 84\,208  & 36,8 MB \\
-soc-LiveJournal1 & 4\,847\,571 & 68\,993\,773   & 539\,119    & 13\,906  & 318,7 MB \\
+wiki-Vote        & 7\,115      & 103\,689       & 1\,005      & 457      & 0,5 MiB \\
+web-Google       & 875\,713    & 5\,105\,039    & 136\,259    & 6\,326   & 29,5 MiB \\
+web-BerkStan     & 685\,230    & 7\,600\,595    & 4\,744      & 84\,208  & 36,8 MiB \\
+soc-LiveJournal1 & 4\,847\,571 & 68\,993\,773   & 539\,119    & 13\,906  & 318,7 MiB \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -905,9 +904,9 @@ sovrapposizione fra trasferimenti e calcolo.}
 \begin{itemize}
   \item \textbf{Il convertitore non scala oltre le istanze usate.} Il
     convertitore Python mantiene l'intera edge list in memoria, con un costo
-    di circa 100 byte per arco (6,66~GB misurati su
-    \texttt{soc-LiveJournal1}). Un'istanza da un miliardo di archi
-    richiederebbe un convertitore in C con ordinamento esterno.
+    di circa 100 byte per arco misurato su \texttt{soc-LiveJournal1}.
+    Un'istanza da un miliardo di archi ne richiederebbe un centinaio di
+    gigabyte, e servirebbe un convertitore in C con ordinamento esterno.
   \item \textbf{Formato binario non standard.} Il formato \texttt{.csr} è
     specifico del progetto: è velocissimo da caricare, ma non ispezionabile
     con strumenti esterni. La scelta è stata fatta consapevolmente,
@@ -922,7 +921,7 @@ sovrapposizione fra trasferimenti e calcolo.}
   \item \textbf{Gestione out-of-core.} Era prevista in fase di proposta una
     logica di streaming per grafi eccedenti la memoria della GPU. Le misure
     hanno mostrato che non è necessaria per le istanze considerate: il
-    grafo più grande occupa 356~MB contro i 4~GB disponibili, e servirebbe
+    grafo più grande occupa 356~MiB contro i 4~GiB disponibili, e servirebbe
     un'istanza dell'ordine del miliardo di archi per superare la soglia.
     Resta un possibile sviluppo futuro, subordinato però alla riscrittura
     del convertitore.
