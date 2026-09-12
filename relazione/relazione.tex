@@ -272,7 +272,7 @@ necessario distribuire il calcolo su più unità di elaborazione.
 \section{Metodologia adottata per la soluzione}
 % =====================================================================
 
-\subsection{Rappresentazione dei dati: CSR del grafo trasposto}
+\subsection{Rappresentazione dei dati: CSR}
 \label{sec:csr}
 
 Per rappresentare i soli elementi non nulli della matrice $\mathbf{MT}$, il
@@ -393,11 +393,11 @@ archi, dal grafo alla matrice agli array.
        {\texttt{out\_deg[3]} $= 0$: il nodo 3 è dangling};
 \end{scope}
 \end{tikzpicture}
-\caption{Costruzione del CSR trasposto su un grafo con $N=5$ nodi e $M=8$
-archi. In (b) la riga $v$ della matrice $\mathbf{MT}$ raccoglie i
+\caption{Costruzione del CSR del grafo trasposto, su un esempio con $N=5$
+nodi e $M=8$ archi. In (b) la riga $v$ della matrice $\mathbf{MT}$ raccoglie i
 \emph{predecessori} di $v$, e ogni colonna $u$ ha il valore costante
 $1/\mathrm{outdeg}(u)$. In (c) \texttt{col\_idx} concatena le righe di (b),
-\texttt{row\_ptr[v]} indica dove ciascuna comincia (le frecce tratteggiate) e
+\texttt{row\_ptr[v]} indica dove ciascuna comincia e
 \texttt{out\_deg} conserva i denominatori. Le due condizioni limite sono
 distinte e vivono su array distinti: la riga 4 è vuota perché nessuno punta al
 nodo 4, mentre \texttt{out\_deg[3]} è nullo perché il nodo 3 non ha archi
@@ -453,10 +453,6 @@ Figura~\ref{fig:csr}: la riga $v$ raccoglie gli archi \emph{entranti} in $v$,
 non quelli uscenti. L'inversione non richiede un passo dedicato: costruendo il
 CSR si sceglie semplicemente il nodo di destinazione, anziché quello di
 origine, come indice di riga.
-
-La motivazione è tanto più forte sulla GPU: le atomiche necessarie alla
-variante \emph{push} serializzerebbero il kernel proprio sui nodi \emph{hub},
-e \texttt{web-BerkStan} contiene un nodo con $84\,208$ archi entranti.
 
 \paragraph{Costo in memoria e modo di accesso.}
 La struttura occupa $8(N{+}1) + 4M + 4N$ byte, ed è questa formula a produrre
@@ -879,8 +875,9 @@ sovrapposizione fra trasferimenti e calcolo.}
 \subsection{Punti di forza}
 \begin{itemize}
   \item \textbf{Assenza di sincronizzazione nel nucleo di calcolo.} La
-    scelta del CSR trasposto elimina alla radice le scritture concorrenti,
-    e si trasferisce invariata alla versione CUDA.
+    formulazione \emph{pull}, con il grafo memorizzato trasposto, elimina
+    alla radice le scritture concorrenti, e si trasferisce invariata alla
+    versione CUDA.
   \item \textbf{Riferimento sequenziale onesto.} Sequenziale e parallelo
     provengono dallo stesso sorgente, il che rende impossibile una
     divergenza fra le due versioni e non gonfia lo speed-up dichiarato.
