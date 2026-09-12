@@ -66,7 +66,7 @@ OpenMP e una ibrida che distribuisce il carico fra CPU e GPU tramite CUDA.
 Sequenziale e OpenMP condividono lo stesso file sorgente e differiscono
 solo per le opzioni di compilazione, così che il riferimento non possa
 divergere dal codice parallelo né essere falsato dai costi di gestione dei
-thread. Il grafo è memorizzato in formato CSR trasposto, scelta che rende il
+thread. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
 implementazioni indipendenti. Le misure sulla versione OpenMP mostrano uno
@@ -124,7 +124,7 @@ $N$ & numero di nodi \\
 \end{center}
 
 \subsection{Damping factor e Dangling Mass}
-\label{sec:damping}
+\label{sec:damping_dangling}
 \stacco
 Il termine $(1-d)/N$: un gruppo di pagine che si citano solo fra loro assorbirebbe, iterazione dopo
 iterazione, tutto il punteggio del grafo, perché i collegamenti vi entrano
@@ -272,16 +272,15 @@ necessario distribuire il calcolo su più unità di elaborazione.
 \section{Metodologia adottata per la soluzione}
 % =====================================================================
 
-\subsection{Rappresentazione dei dati: CSR trasposto}
+\subsection{Rappresentazione dei dati: CSR del grafo trasposto}
 \label{sec:csr}
 
-Il formato \textbf{CSR}, per salvare i valori non nulli della matrice
-$\mathbf{MT}$, invece di utilizzare una matrice bidimensionale $N \times N$
-usa tre array monodimensionali:
+Per rappresentare i soli elementi non nulli della matrice $\mathbf{MT}$, il
+formato \textbf{CSR} non usa una matrice bidimensionale $N \times N$ ma tre
+array monodimensionali:
 \begin{itemize}
   \item \texttt{col\_idx[M]}: gli indici di colonna dei non nulli, letti riga
-    per riga; è la concatenazione delle liste di adiacenza, e la porzione
-    relativa alla riga $v$ elenca i predecessori di $v$;
+    per riga;
   \item \texttt{row\_ptr[N+1]}: \texttt{row\_ptr[v]} è la posizione, dentro
     \texttt{col\_idx}, in cui comincia la riga $v$;
   \item \texttt{out\_deg[N]}: il grado uscente di ogni nodo, cioè il
@@ -305,7 +304,7 @@ archi, dal grafo alla matrice agli array.
 ]
 
 % ------------------------- (a) il grafo -------------------------
-\node[tit] at (1.0,3.15) {(a) il grafo};
+\node[tit] at (1.0,3.35) {(a) il grafo};
 \node[nodo] (n0) at (0,1.9)    {0};
 \node[nodo] (n1) at (2.0,1.9)  {1};
 \node[nodo] (n2) at (1.0,0.3)  {2};
@@ -324,7 +323,7 @@ archi, dal grafo alla matrice agli array.
 
 % ------------------------- (b) la matrice -------------------------
 \begin{scope}[shift={(6.7,0)}]
-  \node[tit] at (1.65,3.15) {(b) la matrice $\mathbf{MT}$};
+  \node[tit] at (1.65,3.35) {(b) la matrice $\mathbf{MT}$};
   \foreach \r/\c/\val in {0/1/{\tfrac13}, 0/4/{\tfrac12},
                           1/0/{\tfrac12}, 1/2/{1},
                           2/0/{\tfrac12}, 2/1/{\tfrac13}, 2/4/{\tfrac12},
@@ -345,43 +344,41 @@ archi, dal grafo alla matrice agli array.
   \foreach \r in {0,...,4} {
     \node[idx] at (-0.22,{2.4-\r*0.66-0.33}) {\r};
   }
-  \node[idx] at (-0.55,2.62) {$u$};
-  \node[idx,rotate=90] at (-0.6,{2.4-2.5*0.66}) {$v$};
+  \node[idx] at (1.65,2.95) {$u$};
+  \node[idx] at (-0.6,{2.4-2.5*0.66}) {$v$}; 
   \node[nota,anchor=north,align=center] at (1.65,-1.05)
        {ogni colonna $u$ è costante\\$=\;1/\mathrm{outdeg}(u)$};
 \end{scope}
 
 % ------------------------- (c) gli array -------------------------
-\begin{scope}[shift={(0,-2.25)}]
-  \node[tit,anchor=west] at (-2.1,0.95) {(c) i tre array};
+\begin{scope}[shift={(0,-2.75)}]
+  \node[tit,anchor=west] at (-2.1,1.15) {(c) i tre array};
 
-  % --- row_ptr
-  \node[nomearr] at (1.15,0) {row\_ptr};
-  \foreach \k/\val in {0/0, 1/2, 2/4, 3/7, 4/8, 5/8} {
-    \node[cella] (rp\k) at ({1.4+\k*0.85+0.425},0) {\val};
-    \node[idx]   at ({1.4+\k*0.85+0.425},0.50) {\k};
+  % --- col_idx: le righe di (b) concatenate
+  \foreach \x/\testo in {1/{riga 0}, 3/{riga 1}, 5.5/{riga 2}, 7.5/{riga 3}} {
+    \node[nota] at ({1.4+\x*0.85},0.82) {\testo};
   }
-
-  % --- dove comincia ogni riga
-  \foreach \k/\p in {0/0, 1/2, 2/4, 3/7, 4/8, 5/8} {
-    \draw[->,thin,gray!75,dashed] (rp\k.south) -- ({1.4+\p*0.85},-1.03);
-  }
-
-  % --- col_idx
-  \node[nomearr] at (1.15,-1.35) {col\_idx};
+  \node[nomearr] at (1.15,0) {col\_idx};
   \foreach \k/\val in {0/1, 1/4, 4/0, 5/1, 6/4} {
-    \node[cella,fill=blue!13] at ({1.4+\k*0.85+0.425},-1.35) {\val};
+    \node[cella,fill=blue!13] at ({1.4+\k*0.85+0.425},0) {\val};
   }
   \foreach \k/\val in {2/0, 3/2, 7/1} {
-    \node[cella,fill=orange!20] at ({1.4+\k*0.85+0.425},-1.35) {\val};
+    \node[cella,fill=orange!20] at ({1.4+\k*0.85+0.425},0) {\val};
   }
-  \foreach \k in {0,...,7} {
-    \node[idx] at ({1.4+\k*0.85+0.425},-1.86) {\k};
+  \foreach \k in {0,...,7} { 
+    \node[idx] at ({1.4+\k*0.85+0.425},0.50) {\k};
   }
-  \foreach \x/\testo in {1/{riga 0}, 3/{riga 1}, 5.5/{riga 2}, 7.5/{riga 3}} {
-    \node[nota] at ({1.4+\x*0.85},-2.28) {\testo};
+  \node[nota,anchor=west] at (8.35,0) {riga 4: vuota};
+
+  % --- row_ptr: dove comincia ogni riga dentro col_idx
+  \node[nomearr] at (1.15,-1.35) {row\_ptr};
+  \foreach \k/\val in {0/0, 1/2, 2/4, 3/7, 4/8, 5/8} {
+    \node[cella] (rp\k) at ({1.4+\k*0.85+0.425},-1.35) {\val};
+    \node[idx]   at ({1.4+\k*0.85+0.425},-1.86) {\k};
   }
-  \node[nota,anchor=west] at (8.35,-1.35) {riga 4: vuota};
+  \foreach \k/\p in {0/0, 1/2, 2/4, 3/7, 4/8, 5/8} {
+    \draw[->,thin,gray!75,dashed] (rp\k.north) -- ({1.4+\p*0.85},-0.33);
+  }
 
   % --- out_deg
   \node[nomearr] at (1.15,-3.05) {out\_deg};
@@ -415,24 +412,10 @@ riga è la differenza fra due offset consecutivi, che quindi non va
 memorizzata a parte. Nell'esempio della figura la riga~2 comincia in posizione
 \texttt{row\_ptr[2]}~$=4$ e finisce prima di \texttt{row\_ptr[3]}~$=7$: i
 predecessori del nodo~2 sono dunque \texttt{col\_idx[4]}, \texttt{col\_idx[5]}
-e \texttt{col\_idx[6]}, cioè i nodi $0$, $1$ e $4$ --- ed è esattamente ciò che
-si legge nel grafo. Gli offset sono $N+1$ e non $N$ proprio per questo motivo:
+e \texttt{col\_idx[6]}, cioè i nodi $0$, $1$ e $4$ --- come si può constatare
+nel grafo. Gli offset sono $N+1$ e non $N$ proprio per questo motivo:
 la sentinella \texttt{row\_ptr[N]}~$=M$ fa sì che l'ultima riga si tratti come
 tutte le altre.
-
-\stacco
-Due situazioni che di solito richiederebbero un caso particolare qui non ne
-hanno bisogno, e la figura le contiene entrambe:
-\begin{itemize}
-  \item il nodo~4 non ha predecessori, quindi la sua riga è vuota:
-    \texttt{row\_ptr[4] == row\_ptr[5]}. Il ciclo interno non viene eseguito
-    nemmeno una volta e $\mathrm{PR}'(4)$ resta pari a $\mathit{base}$, senza
-    alcun controllo aggiuntivo;
-  \item il nodo~3 è \emph{dangling}, cioè privo di archi uscenti:
-    \texttt{out\_deg[3] == 0}. È una condizione diversa dalla precedente, su un
-    array diverso, e si gestisce altrove: il suo punteggio non va perso ma
-    redistribuito (Sezione~\ref{sec:damping}).
-\end{itemize}
 
 \paragraph{Perché manca l'array dei valori.}
 Un CSR generico ha un quarto array, \texttt{val[M]}, con il valore di ogni
