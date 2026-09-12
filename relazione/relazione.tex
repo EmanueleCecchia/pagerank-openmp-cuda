@@ -418,16 +418,22 @@ la sentinella \texttt{row\_ptr[N]}~$=M$ fa sì che l'ultima riga si tratti come
 tutte le altre.
 
 \paragraph{Perché manca l'array dei valori.}
-Un CSR generico ha un quarto array, \texttt{val[M]}, con il valore di ogni
-elemento non nullo. Qui non serve, e la Figura~\ref{fig:csr}(b) mostra il
-perché: tutti i non nulli della colonna $u$ valgono $1/\mathrm{outdeg}(u)$, così
-che il valore dipenda dalla sola colonna e sia ricavabile da \texttt{out\_deg}.
-Il vettore \texttt{contrib} dell'Algoritmo~\ref{alg:seq} porta l'osservazione
-fino in fondo applicando quella divisione una volta per nodo: il ciclo interno
-non contiene allora né divisioni né letture di valori, ma solo un'indirezione e
-una somma. Il risparmio non è trascurabile --- su \texttt{soc-LiveJournal1} un
-\texttt{val[M]} in doppia precisione occuperebbe $8M \approx 552$~MB, più di
-tutto il resto della struttura messo insieme.
+In un CSR generico il terzo array è \texttt{val[M]}, con il valore di ogni
+elemento non nullo; qui al suo posto c'è \texttt{out\_deg[N]}. La
+Figura~\ref{fig:csr}(b) mostra perché si può: tutti i non nulli della colonna
+$u$ valgono $1/\mathrm{outdeg}(u)$, così che il valore dipenda dalla sola
+colonna e sia ricavabile da \texttt{out\_deg}.
+Ricavarlo a ogni accesso costerebbe però una divisione per arco: dentro
+\texttt{col\_idx} ogni nodo $u$ compare tante volte quanti sono i suoi archi
+uscenti, e ognuna rifarebbe la stessa divisione. Il vettore \texttt{contrib}
+dell'Algoritmo~\ref{alg:seq} la esegue invece una volta per nodo, prima
+dell'accumulo; al ciclo che percorre i predecessori resta solo da leggere
+\texttt{contrib[col\_idx[j]]} e sommarlo, senza divisioni e senza valori da
+recuperare. Anche in memoria il guadagno viene dallo stesso passaggio da $M$
+a $N$, con $N \ll M$: su \texttt{soc-LiveJournal1} un \texttt{val[M]} in
+doppia precisione occuperebbe $8 \times M$ byte, cioè circa $552$~MB, mentre
+a \texttt{out\_deg} bastano $4 \times N$ byte, circa $19$~MB: quasi trenta
+volte meno. Il solo \texttt{val[M]} peserebbe più dell'intera struttura CSR.
 
 \paragraph{Perché il trasposto.}
 La scelta progettuale più importante del progetto è \emph{quale} indice
@@ -455,10 +461,11 @@ CSR si sceglie semplicemente il nodo di destinazione, anziché quello di
 origine, come indice di riga.
 
 \paragraph{Costo in memoria e modo di accesso.}
-La struttura occupa $8(N{+}1) + 4M + 4N$ byte, ed è questa formula a produrre
-l'ultima colonna della Tabella~\ref{tab:dataset}: per \texttt{web-Google}
-$29{,}5$~MB contro i $5{,}6$~TB della matrice densa. Resta però un aspetto che
-tornerà nella Sezione~\ref{sec:scalabilita}. \texttt{row\_ptr} e
+La struttura occupa $8 \times (N{+}1) + 4 \times M + 4 \times N$ byte, ed è
+questa formula a produrre l'ultima colonna della Tabella~\ref{tab:dataset}:
+per \texttt{web-Google} $29{,}5$~MB contro i $5{,}6$~TB della matrice densa.
+Resta però un aspetto che tornerà nella
+Sezione~\ref{sec:scalabilita}. \texttt{row\_ptr} e
 \texttt{col\_idx} si leggono in ordine --- accessi sequenziali, ideali per il
 prefetch del processore --- mentre \texttt{contrib[col\_idx[j]]} è un accesso
 casuale a un vettore che su questi grafi non entra in cache. Per ogni arco si
@@ -922,12 +929,13 @@ sovrapposizione fra trasferimenti e calcolo.}
     altrettante moltiplicazioni. Su CPU il guadagno atteso è piccolo ---
     quel ciclo tocca $N$ elementi contro gli $M$ del ciclo di accumulo, e il
     calcolo è comunque \emph{memory-bound} --- e in doppia precisione
-    l'array costerebbe $8N$ byte contro i $4N$ di \texttt{out\_deg},
-    raddoppiando il traffico proprio dove sta il collo di bottiglia. Vale
-    invece la pena provarlo sulla GPU e nella variante \texttt{float}, dove
-    il rapporto di costo fra divisione e moltiplicazione è più sfavorevole e
-    l'occupazione resta invariata. Da verificare l'effetto sulla precisione:
-    $x \cdot (1/d)$ introduce un arrotondamento in più rispetto a $x/d$.
+    l'array costerebbe $8 \times N$ byte contro i $4 \times N$ di
+    \texttt{out\_deg}, raddoppiando il traffico proprio dove sta il collo di
+    bottiglia. Vale invece la pena provarlo sulla GPU e nella variante
+    \texttt{float}, dove il rapporto di costo fra divisione e moltiplicazione
+    è più sfavorevole e l'occupazione resta invariata. Da verificare l'effetto
+    sulla precisione: $x \cdot (1/d)$ introduce un arrotondamento in più
+    rispetto a $x/d$.
   \item \textbf{Ricerca sui parametri di scheduling} (politica e dimensione
     del blocco) e confronto con \texttt{guided}.
 \end{itemize}
