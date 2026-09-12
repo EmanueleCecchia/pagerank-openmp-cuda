@@ -916,6 +916,18 @@ sovrapposizione fra trasferimenti e calcolo.}
   \item \textbf{Granularità adattiva sulla GPU.} Le misure di
     Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate da
     alcun kernel.
+  \item \textbf{Reciproci del grado precalcolati.} Il ciclo dei contributi
+    esegue $N$ divisioni per iterazione; un array \texttt{inv\_out\_deg[N]} con
+    $1/\mathrm{outdeg}(u)$ calcolato una volta sola le ridurrebbe ad
+    altrettante moltiplicazioni. Su CPU il guadagno atteso è piccolo ---
+    quel ciclo tocca $N$ elementi contro gli $M$ del ciclo di accumulo, e il
+    calcolo è comunque \emph{memory-bound} --- e in doppia precisione
+    l'array costerebbe $8N$ byte contro i $4N$ di \texttt{out\_deg},
+    raddoppiando il traffico proprio dove sta il collo di bottiglia. Vale
+    invece la pena provarlo sulla GPU e nella variante \texttt{float}, dove
+    il rapporto di costo fra divisione e moltiplicazione è più sfavorevole e
+    l'occupazione resta invariata. Da verificare l'effetto sulla precisione:
+    $x \cdot (1/d)$ introduce un arrotondamento in più rispetto a $x/d$.
   \item \textbf{Ricerca sui parametri di scheduling} (politica e dimensione
     del blocco) e confronto con \texttt{guided}.
 \end{itemize}
