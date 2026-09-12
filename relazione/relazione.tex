@@ -249,11 +249,12 @@ dove $\mathrm{contrib}[u] = \mathrm{PR}[u]/\mathrm{outdeg}[u]$ per i nodi con ar
 uscenti, e $\mathrm{contrib}[u] = 0$ per i dangling, il cui punteggio confluisce invece in
 $\mathrm{dangling}$. 
 
-Il calcolo di $\mathrm{contrib}[u]$ è separato dal ciclo di accumulo per una ragione di
-costo: eseguito così richiede $N$ divisioni per iterazione anziché $M=|E|$,
-e nei grafi considerati $M \gg N$ (su \texttt{soc-LiveJournal1}, 69 milioni
-contro 4,8 milioni). La divisione è fra le operazioni aritmetiche più lente,
-quindi il risparmio è reale.
+Il calcolo di $\mathrm{contrib}[u]$ --- il primo ciclo, quello dei
+\emph{contributi} --- è separato dal secondo, quello di \emph{accumulo}, per
+una ragione di costo: eseguito così richiede $N$ divisioni per iterazione
+anziché $M=|E|$, e nei grafi considerati $M \gg N$ (su
+\texttt{soc-LiveJournal1}, 69 milioni contro 4,8 milioni). La divisione è fra
+le operazioni aritmetiche più lente, quindi il risparmio è reale.
 
 \subsection{Necessità della parallelizzazione}
 La difficoltà del problema è interamente di scala. La matrice $\mathbf{MT}$
@@ -419,25 +420,30 @@ tutte le altre.
 
 \paragraph{Perché manca l'array dei valori.}
 In un CSR generico il terzo array è \texttt{val[M]}, con il valore di ogni
-elemento non nullo; qui al suo posto c'è \texttt{out\_deg[N]}. La
-Figura~\ref{fig:csr}(b) mostra perché si può: tutti i non nulli della colonna
-$u$ valgono $1/\mathrm{outdeg}(u)$, così che il valore dipenda dalla sola
-colonna e sia ricavabile da \texttt{out\_deg}.
+elemento non nullo; qui al suo posto c'è \texttt{out\_deg[N]}. Il motivo si
+legge nella Figura~\ref{fig:csr}(b): tutti i non nulli della colonna $u$
+valgono $1/\mathrm{outdeg}(u)$, così che il valore dipenda dalla sola colonna
+e sia ricavabile da \texttt{out\_deg}.
 Ricavarlo a ogni accesso costerebbe però una divisione per arco: dentro
 \texttt{col\_idx} ogni nodo $u$ compare tante volte quanti sono i suoi archi
-uscenti, e ognuna rifarebbe la stessa divisione. Il vettore \texttt{contrib}
-dell'Algoritmo~\ref{alg:seq} la esegue invece una volta per nodo, prima
-dell'accumulo; al ciclo che percorre i predecessori resta solo da leggere
-\texttt{contrib[col\_idx[j]]} e sommarlo, senza divisioni e senza valori da
-recuperare. Anche in memoria il guadagno viene dallo stesso passaggio da $M$
-a $N$, con $N \ll M$: su \texttt{soc-LiveJournal1} un \texttt{val[M]} in
+uscenti, e ognuna rifarebbe la stessa divisione. Nell'esempio della
+Figura~\ref{fig:csr} il nodo~1 compare tre volte, una per ciascuno dei suoi
+tre archi uscenti, e il quoziente $\mathrm{PR}(1)/3$ verrebbe ricalcolato
+identico tutte e tre le volte, perché né $\mathrm{PR}(1)$ né
+$\mathrm{outdeg}(1)$ cambiano durante l'iterazione. Il vettore
+\texttt{contrib} dell'Algoritmo~\ref{alg:seq} esegue invece la divisione una
+volta per nodo, in un passaggio separato che precede quello sui predecessori:
+a quest'ultimo resta solo da leggere \texttt{contrib[col\_idx[j]]} e
+sommarlo, senza divisioni e senza valori da recuperare. Anche in memoria il
+guadagno viene dallo stesso passaggio da $M$ a $N$, con $N \ll M$: su
+\texttt{soc-LiveJournal1} un \texttt{val[M]} in
 doppia precisione occuperebbe $8 \times M$ byte, cioè circa $552$~MB, mentre
 a \texttt{out\_deg} bastano $4 \times N$ byte, circa $19$~MB: quasi trenta
-volte meno. Il solo \texttt{val[M]} peserebbe più dell'intera struttura CSR.
+volte meno.
 
 \paragraph{Perché il trasposto.}
-La scelta progettuale più importante del progetto è \emph{quale} indice
-diventa la riga. L'equazione~\eqref{eq:pagerank} richiede, per calcolare
+Importante la scelta di quale indice diventa la riga.
+L'equazione~\eqref{eq:pagerank} richiede, per calcolare
 $\mathrm{PR}_{t+1}(v)$, l'insieme dei nodi che puntano a $v$. Esistono due modi di
 organizzare il calcolo:
 
