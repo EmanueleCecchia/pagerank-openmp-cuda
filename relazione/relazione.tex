@@ -469,15 +469,25 @@ origine, come indice di riga.
 La struttura occupa $8 \times (N{+}1) + 4 \times M + 4 \times N$ byte, ed è
 questa formula a produrre l'ultima colonna della Tabella~\ref{tab:dataset}:
 per \texttt{web-Google} $29{,}5$~MiB contro i $5{,}6$~TiB della matrice densa.
-Resta però un aspetto che tornerà nella
-Sezione~\ref{sec:scalabilita}. \texttt{row\_ptr} e
-\texttt{col\_idx} si leggono in ordine --- accessi sequenziali, ideali per il
-prefetch del processore --- mentre \texttt{contrib[col\_idx[j]]} è un accesso
-casuale a un vettore che su questi grafi non entra in cache. Per ogni arco si
-legge un indice di 4 byte, si va a prendere un contributo in una posizione
-imprevedibile e si esegue una singola somma: il rapporto fra byte trasferiti e
-operazioni aritmetiche è bassissimo. Quanto questo pesi davvero lo misura la
-Sezione~\ref{sec:scalabilita}.
+Resta però un aspetto importante: il ciclo tocca tre array, e li tocca in due
+modi diversi. \texttt{row\_ptr} e \texttt{col\_idx} si leggono in ordine,
+$v = 0, 1, 2, \dots$ e dentro ogni riga $j = 0, 1, 2, \dots$; il processore se
+ne accorge e fa \emph{prefetch},\footnote{Riconosciuto un andamento regolare
+negli accessi alla memoria, il processore porta in cache le celle successive
+prima che il programma le chieda. Funziona sugli accessi sequenziali; su
+quelli imprevedibili non ha nulla su cui basarsi.} cosicché quando si arriva a
+quelle celle siano già in cache e l'attesa sia quasi nulla. Con
+\texttt{contrib[col\_idx[j]]} non succede: l'indice arriva da
+\texttt{col\_idx}, quindi si salta in un punto qualsiasi --- nell'esempio
+della Figura~\ref{fig:csr} prima \texttt{contrib[1]}, poi \texttt{contrib[4]},
+poi \texttt{contrib[0]} --- e il prefetch non ha modo di indovinare dove. Ogni
+accesso rischia così di aspettare la RAM, molto più lenta della cache.
+
+\stacco
+Per ogni arco si va a prendere un contributo in una posizione imprevedibile e
+si esegue una sola somma: tanto traffico di memoria, pochissima aritmetica.
+In teoria il calcolo dovrebbe risultare \emph{memory-bound}, e la
+Sezione~\ref{sec:scalabilita} verifica se è davvero così.
 
 \subsection{Formato binario e pre-elaborazione}
 La conversione dal formato testuale SNAP al CSR avviene \emph{una volta
