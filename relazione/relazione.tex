@@ -512,21 +512,46 @@ stesso arco non compaia due volte.
 
 \stacco
 La conversione dal formato testuale SNAP al CSR avviene \emph{una volta
-sola}, offline, tramite \texttt{tools/snap\_to\_csr.py}. Le motivazioni sono
-due:
-\begin{enumerate}
-  \item l'analisi del testo è lenta e irregolare; eseguirla dentro il
-    programma misurato significherebbe misurare il parser anziché
-    l'algoritmo;
-  \item il codice C non ha così bisogno di alcun parser testuale, il che
-    elimina un'intera classe di errori dalla parte valutata.
-\end{enumerate}
+sola}, offline: l'analisi del testo è lenta e irregolare, ed eseguirla dentro
+il programma misurato significherebbe misurare il parser anziché l'algoritmo.
+Si tratta di sola preparazione dei dati e il risultato è l'input del
+programma vero e proprio, non una sua parte: il convertitore
+\texttt{tools/snap\_to\_csr.py} è scritto in Python per comodità, dato che
+numpy risolve in poche righe la rimappatura degli identificatori e
+l'ordinamento degli archi.
 
+\stacco
 Gli identificatori SNAP sono sparsi (\texttt{web-Google} ha $875\,713$ nodi
 con id fino a $916\,428$) e vengono rimappati su un intervallo contiguo
 $[0,N)$; la corrispondenza inversa è salvata in un file \texttt{.ids}
 separato, letto solo per riportare i risultati negli identificatori
 originali.
+
+\stacco
+Per conservare il risultato si è scelto un formato binario invece che
+testuale. Due ragioni a favore:
+\begin{itemize}\itemsep2pt
+  \item \emph{velocità}: leggere il binario è solo copiare
+    byte,\footnote{Il caricamento si riduce a una \texttt{fread} per array.}
+    perché i byte del file sono già nella forma in cui il programma li usa,
+    senza niente da interpretare, mentre in testo servirebbe un parser in C
+    che a ogni esecuzione rilegga e riconverta i numeri cifra per cifra;
+  \item \emph{dimensione}: in binario un numero occupa i byte del suo tipo,
+    in testo un carattere per cifra più il separatore.
+\end{itemize}
+E due prezzi da pagare:
+\begin{itemize}\itemsep2pt
+  \item \emph{leggibilità}: il file non si apre con un editor per dargli
+    un'occhiata; per guardare dentro un grafo convertito serve uno strumento
+    apposta, ed è \texttt{src/csr\_info.c};
+  \item \emph{errori silenziosi}: qualunque sequenza di byte può essere un
+    CSR valido, sicché un file corrotto o troncato viene letto lo stesso e
+    produce risultati sbagliati senza avvisare.
+    Un testo malformato invece è più facile da rilevare:
+    chi lo legge trova un carattere dove si aspettava una cifra, e si ferma.
+    È per questo che \texttt{src/csr.c} ha il magic number e i cinque controlli
+    della Sezione~\ref{sec:validazione}.
+\end{itemize}
 
 Il grafo è scritto in un file \texttt{.csr}, nel formato binario seguente:
 \begin{center}
@@ -549,11 +574,53 @@ rifiuta subito un file che non sia un \texttt{.csr}, invece di interpretarne i
 primi byte come dimensioni. Le tre cifre finali sono un numero di versione.
 
 \stacco
-\texttt{col\_idx} usa 32 bit anziché 64 perché gli elementi sono $M$: su
-\texttt{soc-LiveJournal1} la scelta dimezza l'occupazione da 526~MiB a
-263~MiB, ed è sicura perché un indice di nodo è sempre minore di
-$N < 2^{32}$. Il caricamento lato C si riduce così a tre \texttt{fread},
-senza alcuna conversione.
+Per ciascuno dei tre array resta da decidere quanti byte dare a ogni singolo
+numero, 4 oppure 8. Servono due informazioni, ed è bene tenerle distinte:
+\emph{quante celle} ha l'array, che dice quanto si guadagna a stringerlo, e
+\emph{quanto valgono} i numeri che vi finiscono dentro, che dice se stringerlo
+è possibile. In 4 byte sta qualunque valore fino a circa $4{,}3$ miliardi.
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Array} & \textbf{Celle} & \textbf{Contenuto di una cella} &
+\textbf{Valore massimo} \\
+\midrule
+\texttt{col\_idx} & $M$, una per arco    & l'indice di un nodo
+  & $N-1$ \\
+\texttt{row\_ptr} & $N{+}1$, una per nodo & una posizione dentro
+  \texttt{col\_idx} & $M$ \\
+\texttt{out\_deg} & $N$, una per nodo     & il grado uscente del nodo
+  & $N-1$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\stacco
+Le prime due righe sono incrociate: \texttt{col\_idx} ha molte celle e valori
+piccoli, \texttt{row\_ptr} poche celle e valori grandi. Su
+\texttt{soc-LiveJournal1} le celle sono 69 milioni (Archi) 
+contro $4{,}8$ milioni (Nodi).
+
+\stacco
+\texttt{col\_idx} usa perciò 32 bit. Si può, perché dentro ci sono indici di
+nodo e il più alto è solo $4\,847\,571$. E conviene, perché le celle sono $M$: i 4 byte
+risparmiati su ognuna valgono 263~MiB su un file che in tutto ne pesa 318,7.
+\texttt{row\_ptr} resta invece a 64 bit. Stringerlo sarebbe possibile
+--- $69$ milioni in 4 byte ci sta --- ma rende poco e costa un limite. Rende
+poco perché le celle sono quattordici volte meno: 18~MiB invece di 263. Costa
+un limite perché dentro ci sono posizioni nell'array degli archi, che crescono
+velocemente con $M$. \texttt{out\_deg} sta a 32 bit come \texttt{col\_idx},
+perché ha un valore massimo che non supera $N$, e in più la scelta pesa poco
+perché, come \texttt{row\_ptr}, ha $N$ celle. Il tipo stretto va insomma dove le celle
+sono tante e i valori piccoli, quello largo dove le celle sono poche e i
+valori possono crescere.
+
+\stacco
+Il guadagno atteso, poi, non è tanto sul disco quanto sul traffico di memoria:
+per ogni arco il ciclo legge un elemento di \texttt{col\_idx} ed esegue una
+sola moltiplicazione-somma, cosicché portare ogni cella da 8 a 4 byte dimezza
+i byte letti in sequenza.
 
 \subsection{Struttura del codice}
 \begin{center}
@@ -573,6 +640,7 @@ senza alcuna conversione.
 \end{center}
 
 \subsection{Validazione del file in ingresso}
+\label{sec:validazione}
 Il caricatore verifica cinque proprietà prima di restituire il grafo, con
 altrettante funzioni dal nome esplicito:
 \begin{itemize}\itemsep2pt
