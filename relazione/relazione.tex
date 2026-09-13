@@ -490,6 +490,27 @@ In teoria il calcolo dovrebbe risultare \emph{memory-bound}, e la
 Sezione~\ref{sec:scalabilita} verifica se è davvero così.
 
 \subsection{Formato binario e pre-elaborazione}
+I grafi della collezione SNAP sono distribuiti come file di testo. 
+Dopo l'intestazione seguono gli archi, uno per riga,
+come due interi separati da un carattere di tabulazione:
+
+\begin{lstlisting}[numbers=none]
+# Directed graph (each unordered pair of nodes is saved once): Wiki-Vote.txt
+# Wikipedia voting on promotion to administratorship (till January 2008). ...
+# Nodes: 7115 Edges: 103689
+# FromNodeId	ToNodeId
+30	1412
+30	3352
+30	5254
+\end{lstlisting}
+
+Il primo intero è il nodo di partenza, il secondo quello di arrivo: ogni riga
+è dunque un arco orientato. Non c'è un elenco esplicito dei nodi --- esistono
+quelli che compaiono in almeno un arco --- e il formato non garantisce né che
+gli identificatori siano contigui, né che le righe siano ordinate, né che uno
+stesso arco non compaia due volte.
+
+\stacco
 La conversione dal formato testuale SNAP al CSR avviene \emph{una volta
 sola}, offline, tramite \texttt{tools/snap\_to\_csr.py}. Le motivazioni sono
 due:
@@ -507,7 +528,7 @@ $[0,N)$; la corrispondenza inversa è salvata in un file \texttt{.ids}
 separato, letto solo per riportare i risultati negli identificatori
 originali.
 
-Il formato binario prodotto è il seguente:
+Il grafo è scritto in un file \texttt{.csr}, nel formato binario seguente:
 \begin{center}
 \begin{tabular}{@{}lll@{}}
 \toprule
@@ -523,6 +544,11 @@ magic \texttt{"PRCSR001"} & \texttt{char[8]}   & 8 byte \\
 \end{tabular}
 \end{center}
 
+I primi otto byte identificano il formato: il caricatore li confronta e
+rifiuta subito un file che non sia un \texttt{.csr}, invece di interpretarne i
+primi byte come dimensioni. Le tre cifre finali sono un numero di versione.
+
+\stacco
 \texttt{col\_idx} usa 32 bit anziché 64 perché gli elementi sono $M$: su
 \texttt{soc-LiveJournal1} la scelta dimezza l'occupazione da 526~MiB a
 263~MiB, ed è sicura perché un indice di nodo è sempre minore di

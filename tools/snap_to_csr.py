@@ -36,6 +36,9 @@ from pathlib import Path
 
 import numpy as np
 
+# First eight bytes of a .csr file; must match CSR_MAGIC in src/csr.c.
+# The trailing digits are a format version: bump them whenever the layout
+# changes, so that old binaries reject new files instead of misreading them.
 MAGIC = b"PRCSR001"
 PTR_DTYPE = np.uint64  # row_ptr
 IDX_DTYPE = np.uint32  # col_idx, out_deg

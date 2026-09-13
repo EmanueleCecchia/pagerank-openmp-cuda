@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* First eight bytes of a .csr file; must match MAGIC in
+ * tools/snap_to_csr.py.  The trailing digits are a format version: bump
+ * them whenever the layout changes, so that old binaries reject new files
+ * instead of misreading them. */
 #define CSR_MAGIC     "PRCSR001"
 #define CSR_MAGIC_LEN 8
 
