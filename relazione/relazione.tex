@@ -273,6 +273,27 @@ necessario distribuire il calcolo su più unità di elaborazione.
 \section{Metodologia adottata per la soluzione}
 % =====================================================================
 
+\subsection{Struttura del codice}
+Il progetto si compone di sette moduli, dei quali due soli formano la parte
+misurata: \texttt{src/pagerank.c}, che contiene il nucleo di calcolo, e
+\texttt{src/csr.c}, che porta il grafo in memoria. Gli altri preparano i dati,
+guidano l'esecuzione o servono a controllare i risultati.
+\begin{center}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{Modulo} & \textbf{Ruolo} & \textbf{Righe} \\
+\midrule
+\texttt{tools/snap\_to\_csr.py}     & conversione SNAP $\to$ CSR binario & 173 \\
+\texttt{src/csr.c},\ \texttt{csr.h} & caricamento e validazione          & 293 \\
+\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo                & 186 \\
+\texttt{src/main.c}                 & driver, output, log dei tempi      & 295 \\
+\texttt{src/csr\_info.c}            & statistiche di un grafo convertito &  91 \\
+\texttt{tools/verify\_pagerank.py}  & verifica indipendente              & 325 \\
+\texttt{tools/run\_benchmarks.sh}   & campagna sperimentale              &  60 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
 \subsection{Rappresentazione dei dati: CSR}
 \label{sec:csr}
 
@@ -599,8 +620,8 @@ numero, 4 oppure 8. Servono due informazioni, ed è bene tenerle distinte:
 \stacco
 Le prime due righe sono incrociate: \texttt{col\_idx} ha molte celle e valori
 piccoli, \texttt{row\_ptr} poche celle e valori grandi. Su
-\texttt{soc-LiveJournal1} le celle sono 69 milioni (Archi) 
-contro $4{,}8$ milioni (Nodi).
+\texttt{soc-LiveJournal1} le celle sono 69 milioni (archi)
+contro $4{,}8$ milioni (nodi).
 
 \stacco
 \texttt{col\_idx} usa perciò 32 bit. Si può, perché dentro ci sono indici di
@@ -621,23 +642,6 @@ Il guadagno atteso, poi, non è tanto sul disco quanto sul traffico di memoria:
 per ogni arco il ciclo legge un elemento di \texttt{col\_idx} ed esegue una
 sola moltiplicazione-somma, cosicché portare ogni cella da 8 a 4 byte dimezza
 i byte letti in sequenza.
-
-\subsection{Struttura del codice}
-\begin{center}
-\begin{tabular}{@{}llr@{}}
-\toprule
-\textbf{Modulo} & \textbf{Ruolo} & \textbf{Righe} \\
-\midrule
-\texttt{tools/snap\_to\_csr.py}     & conversione SNAP $\to$ CSR binario & 173 \\
-\texttt{src/csr.c},\ \texttt{csr.h} & caricamento e validazione          & 293 \\
-\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo                & 186 \\
-\texttt{src/main.c}                 & driver, output, log dei tempi      & 295 \\
-\texttt{src/csr\_info.c}            & statistiche di un grafo convertito &  91 \\
-\texttt{tools/verify\_pagerank.py}  & verifica indipendente              & 325 \\
-\texttt{tools/run\_benchmarks.sh}   & campagna sperimentale              &  60 \\
-\bottomrule
-\end{tabular}
-\end{center}
 
 \subsection{Validazione del file in ingresso}
 \label{sec:validazione}
