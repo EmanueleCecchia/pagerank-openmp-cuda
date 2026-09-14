@@ -6,15 +6,12 @@
 #include <string.h>
 
 /* First eight bytes of a .csr file; must match MAGIC in
- * tools/snap_to_csr.py.  The trailing digits are a format version: bump
- * them whenever the layout changes, so that old binaries reject new files
- * instead of misreading them. */
+ * tools/snap_to_csr.py.  The trailing digits are a format version. */
 #define CSR_MAGIC     "PRCSR001"
 #define CSR_MAGIC_LEN 8
 
-/* malloc() is allowed to return NULL for a zero-sized request, which we
- * would otherwise mistake for an out-of-memory error; ask for one element
- * instead so that a graph with no edges still loads. */
+/* malloc() may return NULL for a zero-sized request, which would look like
+ * an out-of-memory error; ask for one element so an empty graph still loads. */
 static void *alloc_array(uint64_t count, size_t size)
 {
     if (count == 0) {
@@ -23,8 +20,7 @@ static void *alloc_array(uint64_t count, size_t size)
     return malloc((size_t)count * size);
 }
 
-/* Size of an open file in bytes, or -1 if it cannot be determined.
- * Leaves the read position at the beginning of the file. */
+/* Size of an open file, or -1; leaves the read position at the start. */
 static long file_size(FILE *f)
 {
     long size;
@@ -39,7 +35,9 @@ static long file_size(FILE *f)
     return size;
 }
 
-/* fread() wrapper that treats a short read as an error. */
+/* Compares how many elements fread() read with how many were asked for: if
+ * the file ends early fread() reads fewer and says nothing, whereas this
+ * wrapper says so by returning -1. */
 static int read_exact(FILE *f, void *dst, uint64_t count, size_t size)
 {
     if (count == 0) {
@@ -51,8 +49,6 @@ static int read_exact(FILE *f, void *dst, uint64_t count, size_t size)
     return 0;
 }
 
-/* The offsets must cover exactly the whole edge array: row 0 starts at the
- * beginning, and the extra final entry ends at the edge count. */
 static int check_rowptr_span(const csr_graph *g, const char *path)
 {
     if (g->row_ptr[0] != 0 || g->row_ptr[g->n_nodes] != g->n_edges) {
@@ -62,8 +58,8 @@ static int check_rowptr_span(const csr_graph *g, const char *path)
     return 0;
 }
 
-/* Offsets must never go backwards, otherwise row_ptr[v + 1] - row_ptr[v]
- * would be a negative length and the gather loop would run off the array. */
+/* A backwards offset would make row_ptr[v + 1] - row_ptr[v] a negative
+ * length and send the gather loop off the array. */
 static int check_rowptr_monotonic(const csr_graph *g, const char *path)
 {
     uint64_t v;
@@ -77,8 +73,7 @@ static int check_rowptr_monotonic(const csr_graph *g, const char *path)
     return 0;
 }
 
-/* Every stored neighbour must name a real node.  This is what lets the kernel
- * index contrib[col_idx[j]] with no bounds check of its own. */
+/* What lets the kernel index contrib[col_idx[j]] with no bounds check. */
 static int check_neighbours_are_existing_nodes(const csr_graph *g, const char *path)
 {
     uint64_t j;
@@ -93,9 +88,8 @@ static int check_neighbours_are_existing_nodes(const csr_graph *g, const char *p
     return 0;
 }
 
-/* The invariants the PageRank loops rely on.  Without them a corrupt file
- * would make the kernels read past the end of col_idx.  Costs one pass over
- * the arrays, negligible next to the many iterations that follow. */
+/* The invariants the PageRank loops rely on: one pass over the arrays,
+ * negligible next to the many iterations that follow. */
 static int csr_validate(const csr_graph *g, const char *path)
 {
     if (check_rowptr_span(g, path)                   != 0) return -1;
@@ -104,14 +98,8 @@ static int csr_validate(const csr_graph *g, const char *path)
     return 0;
 }
 
-/* The two header checks below must stay in this order and stay adjacent: the
- * first bounds the counts so that the arithmetic in the second cannot
- * overflow on a corrupt header.  csr_load() enforces the order by chaining
- * them with ||, which short-circuits. */
-
-/* Are the counts even possible for a file this size?  The converter stores
- * node ids as uint32, so a valid file cannot claim more nodes than that, and
- * each edge occupies at least 4 bytes. */
+/* Are the counts possible for a file this size?  Node ids are stored as
+ * uint32, and each edge occupies at least 4 bytes. */
 static int check_header_counts(const csr_graph *g, long actual, const char *path)
 {
     if (g->n_nodes == 0 || g->n_nodes > UINT32_MAX ||
@@ -125,9 +113,8 @@ static int check_header_counts(const csr_graph *g, long actual, const char *path
 }
 
 /* Does the file measure exactly what the header implies?  Rejects a truncated
- * or corrupt file before anything is allocated from its numbers, and makes the
- * reads in csr_load() unable to come up short.  Only safe once
- * check_header_counts() has bounded the counts. */
+ * file before anything is allocated from its numbers.  Runs only after
+ * check_header_counts(), which bounds the counts so this cannot overflow. */
 static int check_header_size(const csr_graph *g, long actual, const char *path)
 {
     uint64_t expected = (uint64_t)CSR_MAGIC_LEN
@@ -159,9 +146,6 @@ int csr_load(const char *path, csr_graph *g)
         return -1;
     }
 
-    /* Every failure below jumps to the single cleanup block at the end, so
-     * that the file handle and any partial allocation are released exactly
-     * once no matter which check fails. */
     actual = file_size(f);
     if (actual < 0) {
         fprintf(stderr, "%s: cannot determine file size\n", path);
@@ -181,9 +165,6 @@ int csr_load(const char *path, csr_graph *g)
     g->n_nodes = header[0];
     g->n_edges = header[1];
 
-    /* || short-circuits, so the size check never runs on counts the first
-     * check has already rejected -- which is what keeps its arithmetic from
-     * overflowing. */
     if (check_header_counts(g, actual, path) != 0 ||
         check_header_size(g, actual, path) != 0) {
         goto fail;
