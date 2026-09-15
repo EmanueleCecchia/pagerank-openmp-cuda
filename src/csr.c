@@ -105,7 +105,8 @@ static int check_header_counts(const csr_graph *g, long actual, const char *path
     /* a graph with zero nodes makes no sense and we avoid division by zero.
      * a valid file cannot declare more nodes than a uint32 can address, that is about 4.3 billion.
      * file size / how many bytes per edge, gives the maximum number of edges that can be stored in the file:
-     * If n_edges is greater than this, it means the header claims to have more edges than can fit in the file, which is invalid. */
+     * If n_edges is greater than this, it means the header claims to have more edges than can fit in the file, which is invalid.
+     * Division rather than multiplication to avoid overflow if the header is corrupted and claims a huge number of edges. */
     if (g->n_nodes == 0 || g->n_nodes > UINT32_MAX ||
         g->n_edges > (uint64_t)actual / sizeof(uint32_t)) {
         fprintf(stderr, "%s: header claims %" PRIu64 " nodes and %" PRIu64 " edges, "
@@ -116,13 +117,13 @@ static int check_header_counts(const csr_graph *g, long actual, const char *path
     return 0;
 }
 
-/* Does the file measure exactly what the header implies?  Rejects a truncated
+/* Check if the file measures exactly what the header implies. Rejects a truncated
  * file before anything is allocated from its numbers.  Runs only after
  * check_header_counts(), which bounds the counts so this cannot overflow. */
 static int check_header_size(const csr_graph *g, long actual, const char *path)
 {
     uint64_t expected = (uint64_t)CSR_MAGIC_LEN
-                      + 2 * sizeof(uint64_t)
+                      + 2 * sizeof(uint64_t) // n_nodes and n_edges
                       + (g->n_nodes + 1) * sizeof(uint64_t)
                       + g->n_edges * sizeof(uint32_t)
                       + g->n_nodes * sizeof(uint32_t);

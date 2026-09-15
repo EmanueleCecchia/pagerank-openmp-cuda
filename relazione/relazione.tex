@@ -651,7 +651,8 @@ restituire il grafo, con altrettante funzioni dal nome esplicito:
   \item \texttt{check\_header\_counts} --- i conteggi dichiarati sono
     compatibili con la dimensione del file;
   \item \texttt{check\_header\_size} --- il file misura esattamente quanto
-    l'intestazione implica;
+    l'intestazione implica, controllo fatto prima di qualunque
+    allocazione;
   \item \texttt{check\_rowptr\_span} --- i due estremi di \texttt{row\_ptr}:
     il primo offset vale 0, l'ultimo vale $M$;
   \item \texttt{check\_rowptr\_monotonic} --- gli offset non decrescono, il
@@ -660,13 +661,7 @@ restituire il grafo, con altrettante funzioni dal nome esplicito:
     memorizzato è un nodo esistente.
 \end{itemize}
 
-Due meritano una motivazione esplicita.
-
-\paragraph{Confronto fra intestazione e dimensione reale del file.}
-Prima di allocare alcunché si calcola quanti byte il file \emph{dovrebbe}
-misurare secondo la propria intestazione e lo si confronta con la dimensione
-effettiva. Un file troncato o corrotto viene così respinto prima che i suoi
-numeri vengano usati per dimensionare un'allocazione.
+Uno merita una motivazione esplicita.
 
 \paragraph{Ordine dei controlli come garanzia sintattica.}
 I due controlli sull'intestazione sono concatenati con \texttt{||}:
