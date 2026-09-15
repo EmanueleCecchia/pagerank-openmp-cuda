@@ -662,10 +662,9 @@ restituire il grafo, con altrettante funzioni dal nome esplicito:
 \end{itemize}
 
 \stacco
-L'insieme dei controlli rende dimostrabile una proprietà usata dal nucleo di
-calcolo: il ciclo interno indicizza \texttt{contrib[col\_idx[j]]} senza
-alcun controllo proprio di limiti, ed è sicuro solo perché l'invariante è
-stato stabilito una volta in fase di caricamento.
+I controlli fatti in fase di caricamento permettono al programma di assumere
+che i dati siano corretti e di non verificare nulla dentro i cicli di calcolo
+(\texttt{pagerank.c}).
 
 \subsection{Implementazione sequenziale e OpenMP}
 \label{sec:omp}
