@@ -91,8 +91,6 @@ static int check_neighbours_are_existing_nodes(const csr_graph *g, const char *p
     return 0;
 }
 
-/* The invariants the PageRank loops rely on: one pass over the arrays,
- * negligible next to the many iterations that follow. */
 static int csr_validate(const csr_graph *g, const char *path)
 {
     if (check_rowptr_span(g, path)                   != 0) return -1;
@@ -101,10 +99,13 @@ static int csr_validate(const csr_graph *g, const char *path)
     return 0;
 }
 
-/* Are the counts possible for a file this size?  Node ids are stored as
- * uint32, and each edge occupies at least 4 bytes. */
+/* Check the counts in the header against the actual file size. */
 static int check_header_counts(const csr_graph *g, long actual, const char *path)
 {
+    /* a graph with zero nodes makes no sense and we avoid division by zero.
+     * a valid file cannot declare more nodes than a uint32 can address, that is about 4.3 billion.
+     * file size / how many bytes per edge, gives the maximum number of edges that can be stored in the file:
+     * If n_edges is greater than this, it means the header claims to have more edges than can fit in the file, which is invalid. */
     if (g->n_nodes == 0 || g->n_nodes > UINT32_MAX ||
         g->n_edges > (uint64_t)actual / sizeof(uint32_t)) {
         fprintf(stderr, "%s: header claims %" PRIu64 " nodes and %" PRIu64 " edges, "
