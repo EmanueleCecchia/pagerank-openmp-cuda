@@ -645,14 +645,13 @@ i byte letti in sequenza.
 
 \subsection{Validazione del file in ingresso}
 \label{sec:validazione}
-Il caricatore in \texttt{src/csr.c} verifica cinque proprietà prima di
-restituire il grafo, con altrettante funzioni dal nome esplicito:
+Il caricatore in \texttt{src/csr.c} verifica cinque proprietà del file
+prima di dichiarare riuscito il caricamento:
 \begin{itemize}\itemsep2pt
   \item \texttt{check\_header\_counts} --- i conteggi dichiarati sono
     compatibili con la dimensione del file;
   \item \texttt{check\_header\_size} --- il file misura esattamente quanto
-    l'intestazione implica, controllo fatto prima di qualunque
-    allocazione;
+    l'intestazione implica;
   \item \texttt{check\_rowptr\_span} --- i due estremi di \texttt{row\_ptr}:
     il primo offset vale 0, l'ultimo vale $M$;
   \item \texttt{check\_rowptr\_monotonic} --- gli offset non decrescono, il
