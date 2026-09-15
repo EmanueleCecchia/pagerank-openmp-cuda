@@ -73,13 +73,16 @@ static int check_rowptr_monotonic(const csr_graph *g, const char *path)
     return 0;
 }
 
-/* What lets the kernel index contrib[col_idx[j]] with no bounds check. */
+/* What lets the kernel index contrib[col_idx[j]] with no bounds check.
+ * check that each column index is a valid node,
+ * if outside [0, n_nodes - 1] the file is corrupt. */
 static int check_neighbours_are_existing_nodes(const csr_graph *g, const char *path)
 {
     uint64_t j;
 
+    /* checking every column index because it's not guaranteed to be in order */
     for (j = 0; j < g->n_edges; j++) {
-        if (g->col_idx[j] >= g->n_nodes) {
+        if (g->col_idx[j] >= g->n_nodes) { // col_idx is uint32, so this cannot go negative
             fprintf(stderr, "%s: column index %" PRIu32 " at position %" PRIu64
                             " is not a valid node\n", path, g->col_idx[j], j);
             return -1;
