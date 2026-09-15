@@ -49,6 +49,7 @@ static int read_exact(FILE *f, void *dst, uint64_t count, size_t size)
     return 0;
 }
 
+/* The two ends of row_ptr: the first one must be 0, the last n_edges. */
 static int check_rowptr_span(const csr_graph *g, const char *path)
 {
     if (g->row_ptr[0] != 0 || g->row_ptr[g->n_nodes] != g->n_edges) {
@@ -58,8 +59,7 @@ static int check_rowptr_span(const csr_graph *g, const char *path)
     return 0;
 }
 
-/* A backwards offset would make row_ptr[v + 1] - row_ptr[v] a negative
- * length and send the gather loop off the array. */
+/* row_ptr offsets must never decrease. */
 static int check_rowptr_monotonic(const csr_graph *g, const char *path)
 {
     uint64_t v;
