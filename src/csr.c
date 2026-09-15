@@ -117,9 +117,15 @@ static int check_header_counts(const csr_graph *g, long actual, const char *path
     return 0;
 }
 
-/* Check if the file measures exactly what the header implies. Rejects a truncated
- * file before anything is allocated from its numbers.  Runs only after
- * check_header_counts(), which bounds the counts so this cannot overflow. */
+/* Check if the file measures exactly what the header implies. Rejects a
+ * truncated file before anything is allocated from its numbers.
+ *
+ * Runs only after check_header_counts(), which bounds the counts: the
+ * expected size is computed by multiplying them, and on a corrupt header
+ * claiming, say, 2^63 edges that multiplication exceeds 64 bits.  Unsigned
+ * arithmetic wraps around instead of failing, so the result would come out
+ * small and the most absurd file possible would pass the very check meant
+ * to reject it. */
 static int check_header_size(const csr_graph *g, long actual, const char *path)
 {
     uint64_t expected = (uint64_t)CSR_MAGIC_LEN

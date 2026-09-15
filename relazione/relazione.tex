@@ -661,23 +661,7 @@ restituire il grafo, con altrettante funzioni dal nome esplicito:
     memorizzato è un nodo esistente.
 \end{itemize}
 
-Uno merita una motivazione esplicita.
-
-\paragraph{Ordine dei controlli come garanzia sintattica.}
-I due controlli sull'intestazione sono concatenati con \texttt{||}:
-\begin{lstlisting}[language=C]
-if (check_header_counts(g, actual, path) != 0 ||
-    check_header_size(g, actual, path)   != 0) {
-    goto fail;
-}
-\end{lstlisting}
-La valutazione \emph{short-circuit} garantisce che il secondo controllo non
-venga mai eseguito su valori che il primo ha già respinto. Questo non è
-stilistico: è precisamente ciò che impedisce all'aritmetica di
-\texttt{check\_header\_size} di andare in overflow su un'intestazione
-corrotta che dichiari, ad esempio, $2^{63}$ archi. Il vincolo d'ordine è
-così imposto dal linguaggio anziché essere affidato a un commento.
-
+\stacco
 L'insieme dei controlli rende dimostrabile una proprietà usata dal nucleo di
 calcolo: il ciclo interno indicizza \texttt{contrib[col\_idx[j]]} senza
 alcun controllo proprio di limiti, ed è sicuro solo perché l'invariante è
