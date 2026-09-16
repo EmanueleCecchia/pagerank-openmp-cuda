@@ -75,10 +75,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
 
         error = 0.0;
 
-        /* Each node's per-out-edge contribution.  Dividing here costs N
-         * divisions per iteration rather than the M it would cost inside the
-         * gather below, and M is far larger than N (69M vs 4.8M on
-         * soc-LiveJournal1). */
+        /* How much rank each node sends along each of its outgoing edges. */
 #pragma omp parallel for schedule(static) reduction(+ : dangling)
         for (v = 0; v < n; v++) {
             if (g->out_deg[v] == 0) {
@@ -91,12 +88,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
 
         base = (1.0 - d) / (double)n + d * (double)dangling / (double)n;
 
-        /* Gather from every in-neighbour.  Row lengths span orders of
-         * magnitude on power-law graphs -- web-BerkStan has rows from 0 to
-         * 84,208 entries -- so a static split would leave whichever thread
-         * drew the hubs still working while the others idle.  The dynamic
-         * schedule hands out fresh chunks instead; the chunk size is a
-         * tuning knob worth sweeping in the experiments. */
+        /* Gather from every in-neighbour; dynamic because row lengths are very uneven. */
 #pragma omp parallel for schedule(dynamic, 256) reduction(+ : error)
         for (v = 0; v < n; v++) {
             accum_t sum = 0.0;
