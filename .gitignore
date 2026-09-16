@@ -84,3 +84,6 @@ results/*.ranks.txt
 
 # Crash dumps lasciati dai tool MSYS/Cygwin su Windows
 *.stackdump
+
+# Configurazione dell'editor, specifica della macchina
+.vscode/
