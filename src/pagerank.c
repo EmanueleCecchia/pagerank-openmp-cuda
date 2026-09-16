@@ -94,6 +94,9 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
             accum_t sum = 0.0;
             uint64_t j;
 
+            /* From row_ptr[v] (included) to row_ptr[v+1] (not included) are
+             * the offsets into col_idx of the nodes that point to v; this
+             * sums their contributions. */
             for (j = g->row_ptr[v]; j < g->row_ptr[v + 1]; j++) {
                 sum += (accum_t)contrib[g->col_idx[j]];
             }
