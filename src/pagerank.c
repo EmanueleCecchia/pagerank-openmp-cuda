@@ -41,8 +41,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
 {
     const uint64_t n = g->n_nodes;
     const double   d = params->damping;
-    rank_t  *next    = malloc((size_t)n * sizeof(rank_t));
-    rank_t  *contrib = malloc((size_t)n * sizeof(rank_t));
+    rank_t  *next    = malloc((size_t)n * sizeof(rank_t));  // PR', the updated ranks
+    rank_t  *contrib = malloc((size_t)n * sizeof(rank_t));  // PR[u] / outdeg(u), one per node
     rank_t  *cur, *nxt;
     uint64_t v;
     int iter, converged = 0;
@@ -55,7 +55,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         return -1;
     }
 
-    /* Start from the uniform distribution, which already sums to 1. */
+    /* Start from the uniform distribution 1/N, which already sums to 1. */
     for (v = 0; v < n; v++) {
         rank[v] = (rank_t)(1.0 / (double)n);
     }
