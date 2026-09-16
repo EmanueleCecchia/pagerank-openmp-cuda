@@ -121,7 +121,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         stats->converged  = converged;
     }
 
-    /* An odd number of swaps leaves the result in our scratch buffer. */
+    /* An odd number of swaps leaves the result in our scratch buffer, which
+     * is about to be freed: copy it where the caller expects it. */
     if (cur != rank) {
         memcpy(rank, cur, (size_t)n * sizeof(rank_t));
     }
