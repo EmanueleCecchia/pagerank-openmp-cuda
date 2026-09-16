@@ -60,9 +60,10 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         rank[v] = (rank_t)(1.0 / (double)n);
     }
 
-    /* The iteration alternates between two buffers.  cur always holds the
-     * current ranks; only at the very end is a copy needed, and only if the
-     * iteration count left the result in our own buffer. */
+    /* The iteration alternates between two buffers: cur holds the current
+     * ranks, nxt receives the new ones, and at the end of every pass the two
+     * are swapped through a temporary -- three assignments, not n numbers
+     * copied. */
     cur = rank;
     nxt = next;
 
