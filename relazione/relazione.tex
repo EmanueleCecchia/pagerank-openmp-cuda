@@ -183,7 +183,7 @@ un vettore denso e ne produce uno nuovo, sempre denso, nella forma generica
 $\mathbf{y}=\mathbf{A}\mathbf{x}$. È questa l'operazione che il progetto
 parallelizza. Per non pagare gli zeri né in spazio né in tempo si
 memorizzano i soli elementi non nulli di $\mathbf{MT}$, usando formati come
-CSR (Compressed Sparse Row), che vedremo nella Sezione~\ref{sec:csr}. 
+CSR (Compressed Sparse Row), che vedremo nella Sezione~\ref{sec:csr}.
 
 \subsection{Algoritmo}
 \begin{algorithm}[H]
@@ -222,8 +222,8 @@ $\mathrm{dangling}$ & \emph{dangling mass}: scalare, punteggio complessivo dei n
 $\mathit{base}$ & scalare, quota di punteggio che spetta a ogni nodo indipendentemente dagli archi \\
 $\varepsilon$ & scalare, variazione complessiva fra un'iterazione e la successiva \\
 \bottomrule
-\end{tabular} 
-\end{center} 
+\end{tabular}
+\end{center}
 
 \stacco
 Ogni iterazione ricostruisce il vettore dei punteggi a partire da quello
@@ -237,7 +237,7 @@ l'iterazione conserva da sé la somma a 1. \emph{Pull} indica invece che ogni
 nodo legge dai predecessori anziché scrivere nei successori, scelta motivata
 nella Sezione~\ref{sec:csr}.
 
-\stacco 
+\stacco
 Esplicitando $\mathit{base}$, il calcolo di $\mathrm{PR}'[v]$ è esattamente
 l'iterazione~\eqref{eq:pagerank}:
 \[
@@ -247,7 +247,7 @@ l'iterazione~\eqref{eq:pagerank}:
 \]
 dove $\mathrm{contrib}[u] = \mathrm{PR}[u]/\mathrm{outdeg}[u]$ per i nodi con archi
 uscenti, e $\mathrm{contrib}[u] = 0$ per i dangling, il cui punteggio confluisce invece in
-$\mathrm{dangling}$. 
+$\mathrm{dangling}$.
 
 Il calcolo di $\mathrm{contrib}[u]$ --- il primo ciclo, quello dei
 \emph{contributi} --- è separato dal secondo, quello di \emph{accumulo}, per
@@ -266,7 +266,7 @@ zeri, oltre a $N^2$ moltiplicazioni per iterazione anziché $M$. Si adotta
 perciò una rappresentazione \emph{sparsa}, che conservi i soli elementi non
 nulli --- il formato \textbf{CSR} della
 Sezione~\ref{sec:csr}. Restano comunque $M$ archi da percorrere a ogni
-iterazione, e le iterazioni si susseguono fino a convergenza: questo rende 
+iterazione, e le iterazioni si susseguono fino a convergenza: questo rende
 necessario distribuire il calcolo su più unità di elaborazione.
 
 % =====================================================================
@@ -367,7 +367,7 @@ archi, dal grafo alla matrice agli array.
     \node[idx] at (-0.22,{2.4-\r*0.66-0.33}) {\r};
   }
   \node[idx] at (1.65,2.95) {$u$};
-  \node[idx] at (-0.6,{2.4-2.5*0.66}) {$v$}; 
+  \node[idx] at (-0.6,{2.4-2.5*0.66}) {$v$};
   \node[nota,anchor=north,align=center] at (1.65,-1.05)
        {ogni colonna $u$ è costante\\$=\;1/\mathrm{outdeg}(u)$};
 \end{scope}
@@ -387,7 +387,7 @@ archi, dal grafo alla matrice agli array.
   \foreach \k/\val in {2/0, 3/2, 7/1} {
     \node[cella,fill=orange!20] at ({1.4+\k*0.85+0.425},0) {\val};
   }
-  \foreach \k in {0,...,7} { 
+  \foreach \k in {0,...,7} {
     \node[idx] at ({1.4+\k*0.85+0.425},0.50) {\k};
   }
   \node[nota,anchor=west] at (8.35,0) {riga 4: vuota};
@@ -511,7 +511,7 @@ In teoria il calcolo dovrebbe risultare \emph{memory-bound}, e la
 Sezione~\ref{sec:scalabilita} verifica se è davvero così.
 
 \subsection{Formato binario e pre-elaborazione}
-I grafi della collezione SNAP sono distribuiti come file di testo. 
+I grafi della collezione SNAP sono distribuiti come file di testo.
 Dopo l'intestazione seguono gli archi, uno per riga,
 come due interi separati da un carattere di tabulazione:
 
@@ -643,6 +643,24 @@ per ogni arco il ciclo legge un elemento di \texttt{col\_idx} ed esegue una
 sola moltiplicazione-somma, cosicché portare ogni cella da 8 a 4 byte dimezza
 i byte letti in sequenza.
 
+\subsection{Precisione: \texttt{float} contro \texttt{double}}
+\label{sec:precisione}
+Bisogna decidere anche quanti byte dare a ogni numero dei tre vettori
+dell'Algoritmo~\ref{alg:seq} --- $\mathrm{PR}$, $\mathrm{PR}'$ e
+$\mathrm{contrib}$ --- che non fanno parte del \texttt{.csr} ma vivono solo in
+memoria, e condividono un unico tipo, definito da un \texttt{typedef} che si
+può cambiare in fase di compilazione con \texttt{-DPAGERANK\_FLOAT}. La
+motivazione è che sulle GPU di fascia consumer
+l'aritmetica FP32 (\texttt{float}, 4 byte) è nettamente più veloce della FP64
+(\texttt{double}, 8 byte). Il kernel CUDA richiederà perciò verosimilmente
+\texttt{float}; mantenere entrambe le varianti raggiungibili dallo stesso
+sorgente permette di confrontarne accuratezza e velocità.
+
+Gli accumulatori, che nel codice si chiamano \texttt{accum\_t}, restano però
+sempre in \texttt{double}: memorizzare milioni di rank in singola precisione
+dimezza il traffico di memoria, ma \emph{sommarli} in singola precisione
+perderebbe molta più accuratezza di quanta se ne guadagni.
+
 \subsection{Validazione del file in ingresso}
 \label{sec:validazione}
 Il caricatore in \texttt{src/csr.c} verifica cinque proprietà del file
@@ -721,20 +739,6 @@ del blocco (256) è un parametro di tuning.
 L'iterazione alterna due vettori scambiando i puntatori anziché copiare i
 dati; una sola \texttt{memcpy} finale è necessaria, e solo se il numero di
 scambi è dispari.
-
-\subsection{Precisione: \texttt{float} contro \texttt{double}}
-\label{sec:precisione}
-Il tipo dei rank è definito da un unico \texttt{typedef} commutabile in fase
-di compilazione con \texttt{-DPAGERANK\_FLOAT}. La motivazione è che le GPU
-di fascia consumer eseguono l'aritmetica FP64 a una frazione ridotta del
-ritmo FP32, per cui il kernel CUDA richiederà verosimilmente
-\texttt{float}; mantenere entrambe le varianti raggiungibili dallo stesso
-sorgente permette di confrontarne accuratezza e velocità.
-
-Gli accumulatori restano però sempre in \texttt{double}: memorizzare
-milioni di rank in singola precisione dimezza il traffico di memoria, ma
-\emph{sommarli} in singola precisione perderebbe molta più accuratezza di
-quanta se ne guadagni.
 
 \subsection{Implementazione ibrida OpenMP + CUDA}
 \label{sec:cuda}
