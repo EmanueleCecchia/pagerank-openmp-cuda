@@ -1,19 +1,9 @@
 /* PageRank by power iteration over the transposed CSR that
  * tools/snap_to_csr.py produces.
  *
- * Rank is pulled along incoming edges:
- *
- *   new[v] = (1-d)/N  +  d * ( sum over u->v of old[u]/outdeg(u)  +  D/N )
- *
- * D is the total rank sitting on dangling nodes (outdeg == 0).  They have
- * nowhere to send it, so it is redistributed uniformly over all nodes;
- * without that term the ranks leak away and stop summing to 1.  This is not
- * a corner case here: 136,259 of web-Google's nodes and 539,119 of
- * soc-LiveJournal1's are dangling.
- *
- * One source builds both the sequential and the OpenMP version: compiled
+ * This builds both the sequential and the OpenMP version: compiled
  * without -fopenmp the compiler ignores the pragmas and emits ordinary
- * serial loops, which gives an honest baseline without duplicating code.
+ * serial loops.
  */
 
 #define _POSIX_C_SOURCE 200809L

@@ -3,7 +3,7 @@
 
 #include "csr.h"
 
-/* Precision of the rank vectors */
+/* Precision of the rank and contribution vectors */
 #ifdef PAGERANK_FLOAT
 typedef float rank_t;
 #else
