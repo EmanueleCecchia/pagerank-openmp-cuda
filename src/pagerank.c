@@ -98,7 +98,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
                 sum += (accum_t)contrib[g->col_idx[j]];
             }
             nxt[v] = (rank_t)(base + d * sum);
-            error += fabs((accum_t)nxt[v] - (accum_t)cur[v]);
+            error += fabs((accum_t)nxt[v] - (accum_t)cur[v]); /* fabs: absolute value of a double */
         }
 
         tmp = cur;
