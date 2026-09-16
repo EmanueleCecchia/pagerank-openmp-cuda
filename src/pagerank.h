@@ -3,35 +3,27 @@
 
 #include "csr.h"
 
-/* Precision of the rank vector.  Compile with -DPAGERANK_FLOAT for single
- * precision: consumer-grade GPUs commonly run FP64 at a small fraction of
- * their FP32 rate (query with cudaGetDeviceProperties at runtime, per the
- * portability requirement -- never assume a specific device), so the CUDA
- * kernel will likely want float.  Keeping both reachable from one source
- * lets the accuracy and the speed of the two be compared. */
+/* Precision of the rank vectors */
 #ifdef PAGERANK_FLOAT
 typedef float rank_t;
 #else
 typedef double rank_t;
 #endif
 
-/* Sums are always accumulated in double, whatever rank_t is.  The dangling
- * mass is the worst case: on soc-LiveJournal1 it adds 539,119 ranks of
- * magnitude ~1/N to a total near 0.11.  No single addend is lost -- in float
- * it is still worth some thirty units in the last place -- but each addition
- * rounds, and half a million roundings drift far enough to matter against a
- * convergence tolerance of 1e-6.  Three scalars cost no memory traffic, so
- * there is nothing to trade away by keeping them wide. */
+/* Scalar accumulator type.  Always double, whatever rank_t is: the dangling
+ * mass adds half a million ranks of magnitude ~1/N, and the roundings pile up
+ * far enough to matter against a tolerance of 1e-6.  Three scalars cost no
+ * memory traffic, so keeping them wide trades away nothing. */
 typedef double accum_t;
 
 typedef struct {
     double damping;     /* d in the PageRank formula, conventionally 0.85 */
     double tolerance;   /* stop once the L1 change falls below this */
-    int    max_iters;   /* backstop if the tolerance is never reached */
+    int    max_iters;   /* stops the loop if the tolerance is never reached */
 } pagerank_params;
 
 typedef struct {
-    int    iterations;  /* iterations actually performed */
+    int    iterations;  /* number of iterations actually performed */
     double error;       /* L1 change at the last iteration */
     double seconds;     /* wall-clock time of the iteration loop */
     int    converged;   /* non-zero if the tolerance was reached */
@@ -39,9 +31,9 @@ typedef struct {
 
 pagerank_params pagerank_default_params(void);
 
-/* Computes the PageRank of g into rank, which must have room for g->n_nodes
- * entries.  Returns 0 on success, -1 if working memory could not be
- * allocated.  stats may be NULL. */
+/* Computes the PageRank of g into the rank array, which must have room for
+ * g->n_nodes entries.  Returns 0 on success, -1 if working memory could not
+ * be allocated.  stats may be NULL. */
 int pagerank(const csr_graph *g, const pagerank_params *params,
              rank_t *rank, pagerank_stats *stats);
 
