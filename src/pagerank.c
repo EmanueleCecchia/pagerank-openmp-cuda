@@ -15,6 +15,9 @@
 #include <string.h>
 #include <time.h>
 
+/* Current instant in seconds; a duration is the difference of two readings.
+ * Elapsed time, not CPU time, which with OpenMP would sum the threads and
+ * show no speed-up at all. */
 static double wall_seconds(void)
 {
     struct timespec ts;
