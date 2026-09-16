@@ -687,11 +687,11 @@ che i dati siano corretti e di non verificare nulla dentro i cicli di calcolo
 \subsection{Implementazione sequenziale e OpenMP}
 \label{sec:omp}
 
-Le due versioni condividono \emph{lo stesso file sorgente}. Le direttive
-OpenMP sono ignorate dal compilatore quando non gli si passa
-\texttt{-fopenmp}, che produce quindi normali cicli seriali. Il vantaggio è
-duplice: non esiste duplicazione di codice che possa divergere, e soprattutto
-il riferimento sequenziale è \emph{onesto}. Misurando la versione parallela
+Le due versioni condividono lo stesso file sorgente \texttt{pagerank.c} poiché le
+direttive OpenMP sono ignorate dal compilatore quando non gli si passa
+\texttt{-fopenmp}, che produce quindi un programma sequenziale. Oltre a non
+esistere così duplicazione di codice che possa divergere,
+il riferimento sequenziale è \emph{onesto}: misurando la versione parallela
 limitata a un thread si otterrebbe un tempo peggiore
 (Tabella~\ref{tab:scaling}, colonna \emph{1 thr}), perché si pagherebbe
 comunque la creazione del team di thread: usarla come riferimento
