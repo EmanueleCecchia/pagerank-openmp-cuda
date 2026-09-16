@@ -15,8 +15,13 @@ typedef float rank_t;
 typedef double rank_t;
 #endif
 
-/* Sums are always accumulated in double, whatever rank_t is: adding millions
- * of terms of magnitude ~1/N loses far too much in single precision. */
+/* Sums are always accumulated in double, whatever rank_t is.  The dangling
+ * mass is the worst case: on soc-LiveJournal1 it adds 539,119 ranks of
+ * magnitude ~1/N to a total near 0.11.  No single addend is lost -- in float
+ * it is still worth some thirty units in the last place -- but each addition
+ * rounds, and half a million roundings drift far enough to matter against a
+ * convergence tolerance of 1e-6.  Three scalars cost no memory traffic, so
+ * there is nothing to trade away by keeping them wide. */
 typedef double accum_t;
 
 typedef struct {

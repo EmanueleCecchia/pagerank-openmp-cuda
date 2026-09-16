@@ -660,10 +660,7 @@ Gli accumulatori --- \texttt{accum\_t} nel codice --- restano invece sempre in
 \texttt{double}. Sono tre sole variabili scalari: la somma dei contributi di
 un nodo, la massa dangling e la variazione $\varepsilon$ fra due iterazioni.
 Tenerle larghe non costa quindi traffico di memoria, mentre stringerle
-costerebbe accuratezza: ogni rank vale circa $1/N$, e sommando milioni di
-termini così piccoli il totale cresce mentre gli addendi restano minuscoli,
-finché in singola precisione un addendo diventa più piccolo dello scarto
-rappresentabile accanto al totale e sommarlo non cambia più nulla.
+costerebbe accuratezza.
 
 \subsection{Validazione del file in ingresso}
 \label{sec:validazione}
