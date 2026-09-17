@@ -762,24 +762,24 @@ blocco per riga a seconda della sua lunghezza).}
 
 \paragraph{Dati già disponibili per il progetto del kernel.}
 La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info}, è
-riportata in Tabella~\ref{tab:bins}: fra il 45\% e il 64\% delle righe
-contiene al più 4 elementi, mentre singole righe raggiungono decine di
-migliaia. Questo giustifica quantitativamente uno schema a granularità
-variabile anziché un kernel monolitico con un thread per riga.
+riportata in Tabella~\ref{tab:bins}: nei tre grafi maggiori fra il 45\% e il
+64\% delle righe contiene al più 4 elementi, mentre singole righe raggiungono
+decine di migliaia. Questo giustifica quantitativamente uno schema a
+granularità variabile anziché un kernel monolitico con un thread per riga.
 
 \begin{table}[h]
 \centering
 \caption{Distribuzione delle lunghezze di riga (predecessori per nodo).}
 \label{tab:bins}
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Grafo} & \textbf{1--4} & \textbf{5--32} & \textbf{$>32$} &
-\textbf{max} \\
+\textbf{Grafo} & \textbf{0} & \textbf{1--4} & \textbf{5--32} &
+\textbf{$>32$} & \textbf{max} \\
 \midrule
-wiki-Vote        & 3,0\,\%  & 12,9\,\% & 17,6\,\% & 457 \\
-web-Google       & 56,7\,\% & 22,3\,\% & 2,6\,\%  & 6\,326 \\
-web-BerkStan     & 64,2\,\% & 22,6\,\% & 3,3\,\%  & 84\,208 \\
-soc-LiveJournal1 & 45,2\,\% & 36,7\,\% & 10,7\,\% & 13\,906 \\
+wiki-Vote        & 66,5\,\% & 3,0\,\%  & 12,9\,\% & 17,6\,\% & 457 \\
+web-Google       & 18,4\,\% & 56,7\,\% & 22,3\,\% & 2,6\,\%  & 6\,326 \\
+web-BerkStan     & 9,9\,\%  & 64,2\,\% & 22,6\,\% & 3,3\,\%  & 84\,208 \\
+soc-LiveJournal1 & 7,4\,\%  & 45,2\,\% & 36,7\,\% & 10,7\,\% & 13\,906 \\
 \bottomrule
 \end{tabular}
 \end{table}

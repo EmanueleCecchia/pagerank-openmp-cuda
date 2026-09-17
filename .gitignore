@@ -78,7 +78,7 @@ results/*.ranks.txt
 *.lot
 *.fls
 *.fdb_latexmk
-*.synctex.gz
+*.synctex*
 *.bbl
 *.blg
 
