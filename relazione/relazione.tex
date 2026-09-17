@@ -279,17 +279,17 @@ misurata: \texttt{src/pagerank.c}, che contiene il nucleo di calcolo, e
 \texttt{src/csr.c}, che porta il grafo in memoria. Gli altri preparano i dati,
 guidano l'esecuzione o servono a controllare i risultati.
 \begin{center}
-\begin{tabular}{@{}llr@{}}
+\begin{tabular}{@{}ll@{}}
 \toprule
-\textbf{Modulo} & \textbf{Ruolo} & \textbf{Righe} \\
+\textbf{Modulo} & \textbf{Ruolo} \\
 \midrule
-\texttt{tools/snap\_to\_csr.py}     & conversione SNAP $\to$ CSR binario & 173 \\
-\texttt{src/csr.c},\ \texttt{csr.h} & caricamento e validazione          & 293 \\
-\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo                & 186 \\
-\texttt{src/main.c}                 & programma principale, output, log dei tempi & 295 \\
-\texttt{src/csr\_info.c}            & statistiche di un grafo convertito &  91 \\
-\texttt{tools/verify\_pagerank.py}  & verifica indipendente              & 325 \\
-\texttt{tools/run\_benchmarks.sh}   & misure su tutte le configurazioni  &  60 \\
+\texttt{tools/snap\_to\_csr.py}       & conversione SNAP $\to$ CSR binario \\
+\texttt{src/csr.c},\ \texttt{csr.h}   & caricamento e validazione \\
+\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo \\
+\texttt{src/main.c}                   & programma principale, output, log dei tempi \\
+\texttt{src/csr\_info.c}              & statistiche di un grafo convertito \\
+\texttt{tools/verify\_pagerank.py}    & verifica indipendente \\
+\texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -788,7 +788,7 @@ soc-LiveJournal1 & 7,4\,\%  & 45,2\,\% & 36,7\,\% & 10,7\,\% & 13\,906 \\
 
 \subsection{Strategia di verifica}
 \label{sec:verifica}
-Il programma produce fino a 4,8 milioni di valori, non ispezionabili a
+Il programma produce milioni di valori, non ispezionabili a
 occhio. La correttezza è quindi stabilita ricalcolando il risultato per vie
 che non condividono codice con l'implementazione sotto esame
 (\texttt{tools/verify\_pagerank.py}):
