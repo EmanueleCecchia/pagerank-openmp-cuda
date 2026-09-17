@@ -804,7 +804,7 @@ che non condividono codice con l'implementazione sotto esame
     riferimento denso è indipendente nel metodo ma scritto sempre da me,
     quindi un fraintendimento dell'algoritmo potrebbe essere
     riprodotto identico in entrambi;
-  \item si verifica infine che il binario C sia \emph{giunto a convergenza},
+  \item si verifica infine che il programma C sia \emph{giunto a convergenza},
     che la somma dei rank sia 1 e che il risultato coincida: sia relativamente a 
     \emph{tutti} i valori, sia per quanto riguarda l'\emph{ordine} dei primi
     $k=100$ nodi.
@@ -813,7 +813,7 @@ che non condividono codice con l'implementazione sotto esame
 \stacco
 La conversione da testo a CSR non ha un livello dedicato, ma un suo errore non
 sfugge lo stesso: i riferimenti nascono dall'edge list originale
-(\texttt{.txt}), mentre il binario calcola dal \texttt{.csr}, e se i due non
+(\texttt{.txt}), mentre il programma calcola dal \texttt{.csr}, e se i due non
 corrispondessero il confronto del punto 3 metterebbe a paragone il PageRank di
 due grafi diversi, fallendo su tutti i valori. Quello che manca non è la
 copertura ma la localizzazione: si saprebbe che qualcosa non torna, non se a
@@ -844,12 +844,12 @@ verificare solo l'ordinamento accetterebbe un risultato quantitativamente
 sbagliato.
 
 \stacco
-L'opzione \texttt{-{}-no-dense} rinuncia a quel punto e confronta il binario
+L'opzione \texttt{-{}-no-dense} rinuncia a quel punto e confronta il programma
 direttamente con NetworkX, che non ha il vincolo quadratico. Si perde la
 capacità di localizzare un eventuale errore --- è il livello che fallisce a
 dire se il difetto stia nell'implementazione o nella comprensione
 dell'algoritmo --- ma la verifica diventa possibile sui grafi maggiori:
-\texttt{web-Google} e \texttt{web-BerkStan}. Su entrambi il binario concorda
+\texttt{web-Google} e \texttt{web-BerkStan}. Su entrambi il programma concorda
 con NetworkX su tutti i valori entro $7 \cdot 10^{-11}$, e sul ranking dei
 primi cento nodi a meno di scambi fra punteggi identici.
 
@@ -872,7 +872,7 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 \end{tabular}
 \end{center}
 
-Tutti i binari compilano senza alcun avviso.
+Tutti gli eseguibili compilano senza alcun avviso.
 
 \daFare{Utilizzare anche altre macchine}
 
@@ -1119,7 +1119,7 @@ python3 tools/verify_pagerank.py data/snap/web-Google.txt --no-dense
 \end{lstlisting}
 Termina con stato diverso da zero in caso di discrepanza, e può quindi
 essere usato come test di regressione. La seconda forma salta il riferimento
-denso, che richiederebbe $N^2$ elementi, e confronta il binario con il solo
+denso, che richiederebbe $N^2$ elementi, e confronta il programma con il solo
 NetworkX: è il modo di verificare i grafi troppo grandi per la prima.
 
 \subsection{Riproduzione degli esperimenti}

@@ -2,9 +2,9 @@
 """Independent correctness check for the PageRank implementation.
 
 Computes PageRank a second time, by a route that shares no code with the
-project, and compares the answer with what the C binary prints.  The SNAP edge
-list is re-parsed first, borrowing nothing from tools/snap_to_csr.py, and
-everything below is built from that parse:
+project, and compares the answer with what the C implementation produces.  The
+SNAP edge list is re-parsed first, borrowing nothing from
+tools/snap_to_csr.py, and everything below is built from that parse:
 
   1. PageRank is computed on a *dense* N x N transition matrix by ordinary
      power iteration -- no CSR, no row pointers, no gather loop, so a bug in
@@ -12,11 +12,11 @@ everything below is built from that parse:
   2. that dense reference is itself checked against networkx, an outside
      implementation, which rules out a misreading of the algorithm shared by
      both (skipped when networkx or scipy is missing);
-  3. the C binary is run and its output compared against the above.
+  3. the C executable is run and its output compared against the above.
 
-Because the references come from the .txt edge list while the binary computes
-from the .csr, a converter bug shows up here too: the two would simply be
-ranking different graphs.
+Because the references come from the .txt edge list while the executable
+computes from the .csr, a converter bug shows up here too: the two would
+simply be ranking different graphs.
 
 The dense matrix costs N^2 * 8 bytes, so step 1 only works on small graphs:
 wiki-Vote needs ~405 MB, while web-Google would need ~6 PB.  That is exactly
@@ -56,8 +56,9 @@ CONV_LINE = re.compile(r"^(converged|STOPPED[^)]*?) after (\d+) iterations")
 # them (it appears in the messages) and the node ids they are indexed by.
 Reference = namedtuple("Reference", "ranks name order")
 
-# What the binary reported: its top-k table as (snap id, value) pairs, the rank
-# sum it printed, whether it converged, and the whole vector it wrote with -o.
+# What the executable reported: its top-k table as (snap id, value) pairs, the
+# rank sum it printed, whether it converged, and the whole vector it wrote
+# with -o.
 Run = namedtuple("Run", "top rank_sum converged iterations ranks")
 
 # One verdict; the message carries the measured number, pass or fail.
@@ -175,9 +176,9 @@ def read_all_ranks(path, order):
     return ranks
 
 
-def parse_output(stdout, binary):
+def parse_output(stdout, executable):
     """Pull the top-k table, the rank sum and the convergence line out of what
-    the binary printed."""
+    the executable printed."""
     top, rank_sum, converged, iterations = [], None, None, None
     for line in stdout.splitlines():
         if match := TOP_LINE.match(line):
@@ -188,18 +189,18 @@ def parse_output(stdout, binary):
             converged = match.group(1) == "converged"
             iterations = int(match.group(2))
     if not top:
-        raise SystemExit(f"could not parse any ranking from {binary}:\n{stdout}")
+        raise SystemExit(f"could not parse any ranking from {executable}:\n{stdout}")
     return top, rank_sum, converged, iterations
 
 
-def run_binary(args, csr_path, ids_path, order):
+def run_executable(args, csr_path, ids_path, order):
     """Run the C implementation and collect everything it reports.
 
     It is also asked for every rank (-o), so the comparison can cover all N
     values instead of the k it prints; that file carries full double precision,
     so nothing is lost on the way.
     """
-    command = [str(args.binary), str(csr_path), "-i", str(ids_path),
+    command = [str(args.c_executable), str(csr_path), "-i", str(ids_path),
                "-k", str(args.k), "-d", str(args.damping),
                "-t", str(args.tolerance), "-n", str(args.max_iters)]
     with tempfile.TemporaryDirectory() as tmp:
@@ -208,12 +209,13 @@ def run_binary(args, csr_path, ids_path, order):
             done = subprocess.run(command + ["-o", str(ranks_path)],
                                   capture_output=True, text=True, check=True)
         except FileNotFoundError:
-            raise SystemExit(f"{args.binary}: not built -- run 'make' first")
+            raise SystemExit(f"{args.c_executable}: not built -- run 'make' first")
         except subprocess.CalledProcessError as exc:
-            raise SystemExit(f"{args.binary} failed:\n{exc.stderr}")
+            raise SystemExit(f"{args.c_executable} failed:\n{exc.stderr}")
         ranks = read_all_ranks(ranks_path, order)
 
-    top, rank_sum, converged, iterations = parse_output(done.stdout, args.binary)
+    top, rank_sum, converged, iterations = parse_output(done.stdout,
+                                                        args.c_executable)
     return Run(top, rank_sum, converged, iterations, ranks)
 
 
@@ -234,7 +236,7 @@ def check_convergence(run):
     """A run stopped at the iteration limit has not settled, so its ranks are
     not the answer even when the top few happen to look right."""
     if run.converged is None:
-        return Check(False, "could not tell whether the binary converged")
+        return Check(False, "could not tell whether the executable converged")
     if not run.converged:
         return Check(False, f"stopped at the iteration limit after {run.iterations}"
                             f" iterations, so the ranks have not settled")
@@ -334,17 +336,20 @@ def parse_args(argv):
     parser.add_argument("edge_list", type=Path, help="SNAP .txt edge list")
     parser.add_argument("--csr", type=Path, help="default: edge list with .csr")
     parser.add_argument("--ids", type=Path, help="default: edge list with .ids")
-    parser.add_argument("--binary", type=Path, default=Path("build/pagerank_seq"))
+    parser.add_argument("--c-executable", type=Path,
+                        default=Path("build/pagerank_seq"),
+                        help="which build of the C code to check")
     parser.add_argument("-d", "--damping", type=float, default=0.85)
     parser.add_argument("-t", "--tolerance", type=float, default=1e-12,
-                        help="L1 tolerance passed to the C binary")
+                        help="L1 tolerance passed to the C executable")
     parser.add_argument("-k", type=int, default=100,
                         help="how many top ranks to compare; deeper than a few "
                              "thousand the values are near-identical and their "
                              "order is arbitrary")
     parser.add_argument("-n", "--max-iters", type=int, default=500)
     parser.add_argument("--value-tolerance", type=float, default=1e-8,
-                        help="allowed difference per rank (the C binary prints 9 decimals)")
+                        help="allowed difference per rank (the C executable "
+                             "prints 9 decimals)")
     parser.add_argument("--max-nodes", type=int, default=MAX_DENSE_NODES,
                         help="refuse graphs larger than this (dense matrix is N^2)")
     parser.add_argument("--no-dense", action="store_true",
@@ -375,8 +380,8 @@ def main(argv=None):
     report = Report()
     reference = build_reference(args, edges, order, report)
 
-    print(f"\n[binary] {args.binary}")
-    run = run_binary(args, csr_path, ids_path, order)
+    print(f"\n[executable] {args.c_executable}")
+    run = run_executable(args, csr_path, ids_path, order)
     want_values = [reference.ranks[i] for i in np.argsort(-reference.ranks)[:args.k]]
 
     report.record(check_convergence(run))

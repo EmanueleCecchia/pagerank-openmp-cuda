@@ -52,9 +52,9 @@ soc-LiveJournal1 peaks near 6.7 GB.
 make
 ```
 
-Produces four binaries in `build/`, all from the same sources:
+Produces four executables in `build/`, all from the same sources:
 
-| Binary | Build | Purpose |
+| Executable | Build | Purpose |
 |---|---|---|
 | `pagerank_seq` | no `-fopenmp` | sequential baseline |
 | `pagerank_omp` | `-fopenmp` | parallel, double precision |
@@ -130,7 +130,7 @@ python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
 ```
 
 Recomputes PageRank by routes sharing no code with the project, then compares
-against the C binary. Three checks:
+against the C executable. Three checks:
 
 - a **dense N×N** reference — no CSR, no gather loop, so a bug in the sparse
   representation cannot hide;
@@ -138,7 +138,7 @@ against the C binary. Three checks:
   the dense code is independent in method but shares an author with the code
   it checks, so this rules out the same misreading of the algorithm appearing
   in both (skipped automatically if networkx or scipy is missing);
-- the C binary itself — that it **converged** rather than hitting the
+- the C executable itself — that it **converged** rather than hitting the
   iteration limit, that the top-k ranking and values match, and that the ranks
   sum to 1 (which fails if dangling-node mass is mishandled).
 
@@ -154,7 +154,7 @@ wiki-Vote needs ~390 MiB, web-Google would need ~5.6 TiB. That is why
 wiki-Vote is in the ladder — not for performance, but as the one graph where a
 brute-force answer is computable at all.
 
-Use `--binary build/pagerank_omp` to check the parallel build instead.
+Use `--c-executable build/pagerank_omp` to check the parallel build instead.
 
 ## Project structure
 
@@ -163,4 +163,4 @@ Use `--binary build/pagerank_omp` to check the parallel build instead.
 - `relazione/` — the report (LaTeX source and compiled PDF)
 - `results/` — `bench.csv` with every run; rank vectors are gitignored
 - `data/` — downloaded datasets (gitignored)
-- `build/` — compiled binaries (gitignored)
+- `build/` — compiled executables (gitignored)
