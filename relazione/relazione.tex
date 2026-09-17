@@ -807,19 +807,44 @@ che non condividono codice con l'implementazione sotto esame
     quindi un fraintendimento dell'algoritmo potrebbe essere
     riprodotto identico in entrambi;
   \item si verifica infine che il binario C sia \emph{giunto a convergenza},
-    che il ranking e i valori coincidano e che la somma dei rank sia 1.
+    che la somma dei rank sia 1 e che il risultato coincida: sia relativamente a 
+    \emph{tutti} i valori, sia per quanto riguarda l'\emph{ordine} dei primi
+    $k=100$ nodi.
 \end{enumerate}
 
+\stacco
+Poiché la matrice densa richiede $N^2$ elementi, il punto 2 è possibile solo
+sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro i 5,6~TiB che
+servirebbero per \texttt{web-Google}. È questa la ragione per cui
+\texttt{wiki-Vote} fa parte dell'insieme di test.
+
+\stacco
+I due piani del punto 4 colgono cose diverse. Il confronto sui valori
+intercetta un punteggio sbagliato ovunque si trovi, anche in fondo alla
+classifica dove non sposterebbe la somma. Quello sull'ordine verifica la
+cosa per cui PageRank esiste, ma ha senso solo in testa: più in giù i
+punteggi si addensano fino a coincidere --- i 4734 nodi di
+\texttt{wiki-Vote} senza archi entranti hanno tutti lo stesso valore ---
+e l'ordine fra pari dipende solo da come l'ordinamento spezza i pareggi.
+Uno scambio viene perciò segnalato come errore soltanto se avviene fra
+valori effettivamente distinti.
+
+\stacco
 Il controllo di convergenza al punto 4 non è ridondante: forzando
 l'arresto dopo 5 iterazioni il \emph{ranking} dei primi risultati è ancora
 corretto mentre i valori sono lontani dall'essersi stabilizzati, quindi
 verificare solo l'ordinamento accetterebbe un risultato quantitativamente
 sbagliato.
 
-Poiché la matrice densa richiede $N^2$ elementi, questa verifica è
-possibile solo sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro
-i 5,6~TiB che servirebbero per \texttt{web-Google}. È questa la ragione per
-cui \texttt{wiki-Vote} fa parte dell'insieme di test.
+\stacco
+L'opzione \texttt{-{}-no-dense} rinuncia a quel punto e confronta il binario
+direttamente con NetworkX, che non ha il vincolo quadratico. Si perde la
+capacità di localizzare un eventuale errore --- è il livello che fallisce a
+dire se il difetto stia nell'implementazione o nella comprensione
+dell'algoritmo --- ma la verifica diventa possibile sui grafi maggiori:
+\texttt{web-Google} e \texttt{web-BerkStan}. Su entrambi il binario concorda
+con NetworkX su tutti i valori entro $7 \cdot 10^{-11}$, e sul ranking dei
+primi cento nodi a meno di scambi fra punteggi identici.
 
 % =====================================================================
 \section{Risultati sperimentali}
@@ -877,7 +902,8 @@ intermedia (Tabella~\ref{tab:bins}).
 \toprule
 \textbf{Confronto} & \textbf{Accordo} & \textbf{Esclude} \\
 \midrule
-C contro riferimento denso   & $4{,}8\cdot10^{-10}$ & errori in CSR o nel ciclo di accumulo \\
+C contro riferimento denso   & $7{,}1\cdot10^{-14}$ & errori in CSR o nel ciclo di accumulo \\
+C contro NetworkX, grafi maggiori & $6{,}5\cdot10^{-11}$ & errori visibili solo su scala grande \\
 NetworkX contro denso        & $4{,}5\cdot10^{-12}$ & fraintendimenti dell'algoritmo \\
 OpenMP contro sequenziale    & $2{,}1\cdot10^{-14}$ & race condition \\
 \texttt{float} contro \texttt{double} & $2{,}2\cdot10^{-7}$ & perdita di precisione anomala \\
@@ -1082,9 +1108,12 @@ thread si imposta con \texttt{OMP\_NUM\_THREADS}.
 \subsection{Verifica della correttezza}
 \begin{lstlisting}[language=bash,numbers=none]
 python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
+python3 tools/verify_pagerank.py data/snap/web-Google.txt --no-dense
 \end{lstlisting}
 Termina con stato diverso da zero in caso di discrepanza, e può quindi
-essere usato come test di regressione.
+essere usato come test di regressione. La seconda forma salta il riferimento
+denso, che richiederebbe $N^2$ elementi, e confronta il binario con il solo
+NetworkX: è il modo di verificare i grafi troppo grandi per la prima.
 
 \subsection{Riproduzione degli esperimenti}
 \begin{lstlisting}[language=bash,numbers=none]
