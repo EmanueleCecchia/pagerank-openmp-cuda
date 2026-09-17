@@ -752,20 +752,22 @@ dispari.
 
 \daFare{Sezione da scrivere interamente. Dovrà documentare:
 partizionamento del carico fra $V_{host}$ e $V_{device}$ in base al grado
-dei nodi; orchestrazione con stream CUDA non predefiniti e
-\texttt{cudaMemcpyAsync} per sovrapporre trasferimenti e calcolo;
+dei nodi; copiare i dati sulla GPU mentre il calcolo è già in corso,
+usando stream creati esplicitamente e \texttt{cudaMemcpyAsync};
 combinazione dell'errore di convergenza calcolato su CPU e GPU;
 dimensionamento di griglia e blocchi a runtime tramite
 \texttt{cudaGetDeviceProperties} e \texttt{cudaMemGetInfo}, come richiesto
 dal requisito di portabilità; granularità adattiva (un thread, un warp o un
 blocco per riga a seconda della sua lunghezza).}
 
-\paragraph{Dati già disponibili per il progetto del kernel.}
-La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info}, è
-riportata in Tabella~\ref{tab:bins}: nei tre grafi maggiori fra il 45\% e il
-64\% delle righe contiene al più 4 elementi, mentre singole righe raggiungono
-decine di migliaia. Questo giustifica quantitativamente uno schema a
-granularità variabile anziché un kernel monolitico con un thread per riga.
+\paragraph{Perché una granularità variabile.}
+La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info.c},
+è riportata in Tabella~\ref{tab:bins}: nei tre grafi maggiori fra il 45\% e
+il 64\% delle righe contiene al più 4 elementi, mentre singole righe
+raggiungono decine di migliaia. Questo giustifica quantitativamente la
+scelta: invece di assegnare sempre un thread a ogni riga, a seconda della
+sua lunghezza le si assegna un thread, un warp o un blocco intero, che si
+dividono gli elementi della riga.
 
 \begin{table}[h]
 \centering
