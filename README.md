@@ -130,9 +130,8 @@ python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
 ```
 
 Recomputes PageRank by routes sharing no code with the project, then compares
-against the C binary. Four checks:
+against the C binary. Three checks:
 
-- the binary CSR really is the transpose of an independently parsed edge list;
 - a **dense N×N** reference — no CSR, no gather loop, so a bug in the sparse
   representation cannot hide;
 - **networkx**, a third-party implementation, against that dense reference:

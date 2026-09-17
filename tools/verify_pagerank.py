@@ -2,28 +2,32 @@
 """Independent correctness check for the PageRank implementation.
 
 Computes PageRank a second time, by a route that shares no code with the
-project, and compares the answer with what the C binary prints:
+project, and compares the answer with what the C binary prints.  The SNAP edge
+list is re-parsed first, in plain Python (no numpy, none of
+tools/snap_to_csr.py), and everything below is built from that parse:
 
-  1. the SNAP edge list is re-parsed with plain Python (no numpy, none of
-     tools/snap_to_csr.py), giving an independent view of the graph;
-  2. PageRank is computed on a *dense* N x N transition matrix by ordinary
+  1. PageRank is computed on a *dense* N x N transition matrix by ordinary
      power iteration -- no CSR, no row pointers, no gather loop, so a bug in
      the sparse representation cannot hide here;
-  3. the binary CSR file is re-read with a reader written in this file rather
-     than imported from the converter, so a writer bug cannot be masked by
-     reusing its own reader;
-  4. the C binary is run and its output compared against all of the above.
+  2. that dense reference is itself checked against networkx, an outside
+     implementation, which rules out a misreading of the algorithm shared by
+     both (skipped when networkx or scipy is missing);
+  3. the C binary is run and its output compared against the above.
 
-The dense matrix costs N^2 * 8 bytes, so step 2 only works on small graphs:
+Because the references come from the .txt edge list while the binary computes
+from the .csr, a converter bug shows up here too: the two would simply be
+ranking different graphs.
+
+The dense matrix costs N^2 * 8 bytes, so step 1 only works on small graphs:
 wiki-Vote needs ~405 MB, while web-Google would need ~6 PB.  That is exactly
 why wiki-Vote is in the dataset ladder -- it is not there to be fast, it is
 there to be the one graph where a brute-force answer is computable at all.
 
---no-dense drops step 2 and checks the binary against networkx alone.  That
-loses the ability to tell an implementation bug from a misread algorithm --
-whichever step fails tells you where to look -- but it removes the N^2 wall,
-so the larger graphs can be verified too: web-Google takes about 2 minutes,
-web-BerkStan about 4.
+--no-dense drops steps 1 and 2, promoting networkx from a check on the dense
+reference to the reference itself.  That loses the ability to tell an
+implementation bug from a misread algorithm -- whichever step fails tells you
+where to look -- but it removes the N^2 wall, so the larger graphs can be
+verified too: web-Google takes about 2 minutes, web-BerkStan about 4.
 
 Usage:
     python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
@@ -32,14 +36,13 @@ Usage:
 
 import argparse
 import re
-import tempfile
 import subprocess
 import sys
+import tempfile
+from collections import namedtuple
 from pathlib import Path
 
 import numpy as np
-
-MAGIC = b"PRCSR001"
 
 # N^2 * 8 bytes must stay sane: 15000 nodes is already 1.8 GB.
 MAX_DENSE_NODES = 15000
@@ -49,12 +52,39 @@ TOP_LINE = re.compile(
 SUM_LINE = re.compile(r"^rank sum\s+([-\d.eE+]+)\s*$")
 CONV_LINE = re.compile(r"^(converged|STOPPED[^)]*?) after (\d+) iterations")
 
+# The answer everything is compared against: the ranks, the route that produced
+# them (it appears in the messages) and the node ids they are indexed by.
+Reference = namedtuple("Reference", "ranks name order")
+
+# What the binary reported: its top-k table as (snap id, value) pairs, the rank
+# sum it printed, whether it converged, and the whole vector it wrote with -o.
+Run = namedtuple("Run", "top rank_sum converged iterations ranks")
+
+# One verdict; the message carries the measured number, pass or fail.
+Check = namedtuple("Check", "ok message")
+
+
+class Report:
+    """Prints each verdict as it is reached and keeps the failures, which are
+    what decides the exit status."""
+
+    def __init__(self):
+        self.failures = []
+
+    def record(self, check):
+        print(f"      {'ok:' if check.ok else 'FAIL'} {check.message}")
+        if not check.ok:
+            self.failures.append(check.message)
+        return check.ok
+
+
+# --- the independent answer -------------------------------------------------
 
 def parse_edges(path):
     """Re-read the SNAP edge list with plain Python.
 
-    Deliberately avoids numpy and the converter: this is the independent
-    view of the graph that everything else is checked against.
+    No numpy and nothing from the converter: this is the independent view of
+    the graph that the references are built on.
     """
     edges = set()
     nodes = set()
@@ -62,11 +92,9 @@ def parse_edges(path):
         for line in handle:
             if line.startswith("#"):
                 continue
-            src, dst = line.split()
-            src, dst = int(src), int(dst)
+            src, dst = (int(field) for field in line.split())
             edges.add((src, dst))
-            nodes.add(src)
-            nodes.add(dst)
+            nodes.update((src, dst))
     return edges, sorted(nodes)
 
 
@@ -93,126 +121,18 @@ def dense_pagerank(edges, order, damping, tolerance, max_iters):
     return rank
 
 
-def read_csr(path):
-    """Read the binary CSR without importing the converter's own reader."""
-    with open(path, "rb") as handle:
-        if handle.read(8) != MAGIC:
-            raise SystemExit(f"{path}: not a {MAGIC.decode()} file")
-        n, m = np.fromfile(handle, dtype=np.uint64, count=2)
-        row_ptr = np.fromfile(handle, dtype=np.uint64, count=int(n) + 1)
-        col_idx = np.fromfile(handle, dtype=np.uint32, count=int(m))
-        out_deg = np.fromfile(handle, dtype=np.uint32, count=int(n))
-    return int(n), int(m), row_ptr, col_idx, out_deg
-
-
-def check_csr(csr_path, ids_path, edges, order):
-    """Confirm the stored CSR really is the transpose of the parsed graph."""
-    n, m, row_ptr, col_idx, out_deg = read_csr(csr_path)
-    ids = np.fromfile(ids_path, dtype=np.uint64)
-    index_of = {original: i for i, original in enumerate(order)}
-
-    problems = []
-    if n != len(order):
-        problems.append(f"node count: csr {n}, edge list {len(order)}")
-    if m != len(edges):
-        problems.append(f"edge count: csr {m}, edge list {len(edges)}")
-    if ids.tolist() != order:
-        problems.append("the .ids file is not the sorted original node ids")
-    if problems:
-        return problems
-
-    want_in = {v: set() for v in range(n)}
-    want_out = [0] * n
-    for src, dst in edges:
-        want_in[index_of[dst]].add(index_of[src])
-        want_out[index_of[src]] += 1
-
-    if out_deg.tolist() != want_out:
-        problems.append("out-degrees disagree with the edge list")
-
-    for v in range(n):
-        row = col_idx[row_ptr[v]:row_ptr[v + 1]]
-        if set(row.tolist()) != want_in[v]:
-            problems.append(f"row {v} is not the in-neighbour set of node {order[v]}")
-            break
-        if np.any(np.diff(row.astype(np.int64)) <= 0):
-            problems.append(f"row {v} is not sorted and unique")
-            break
-    return problems
-
-
-def run_binary(binary, csr_path, ids_path, k, damping, tolerance, max_iters,
-               ranks_path=None):
-    """Run the C implementation and pull the top-k table out of its output.
-
-    With ranks_path the binary is also asked for every rank (-o), so the
-    caller can compare all N values instead of the k it prints.  The binary
-    writes them with full double precision, so nothing is lost on the way.
-    """
-    command = [str(binary), str(csr_path), "-i", str(ids_path),
-               "-k", str(k), "-d", str(damping),
-               "-t", str(tolerance), "-n", str(max_iters)]
-    if ranks_path is not None:
-        command += ["-o", str(ranks_path)]
-    try:
-        done = subprocess.run(command, capture_output=True, text=True, check=True)
-    except FileNotFoundError:
-        raise SystemExit(f"{binary}: not built -- run 'make' first")
-    except subprocess.CalledProcessError as exc:
-        raise SystemExit(f"{binary} failed:\n{exc.stderr}")
-
-    top, rank_sum, converged, iterations = [], None, None, None
-    for line in done.stdout.splitlines():
-        match = TOP_LINE.match(line)
-        if match:
-            top.append((int(match.group(3)), float(match.group(4))))
-            continue
-        match = SUM_LINE.match(line)
-        if match:
-            rank_sum = float(match.group(1))
-            continue
-        match = CONV_LINE.match(line)
-        if match:
-            converged = match.group(1) == "converged"
-            iterations = int(match.group(2))
-    if not top:
-        raise SystemExit(f"could not parse any ranking from {binary}:\n{done.stdout}")
-    return top, rank_sum, converged, iterations
-
-
-def read_all_ranks(path, order):
-    """Read an -o ranks file and return the ranks in the order of `order`.
-
-    The file lists one "snap_id rank" pair per node; `order` is the node list
-    the references are indexed by, so the ranks have to be permuted to match.
-    parse_edges returns it sorted, which is what lets searchsorted do the
-    permutation in one vectorised step.
-    """
-    table = np.loadtxt(path, comments="#")
-    if table.ndim != 2 or len(table) != len(order):
-        raise SystemExit(f"{path}: expected {len(order)} ranks, found {len(table)}")
-
-    nodes = np.asarray(order, dtype=np.int64)
-    listed = table[:, 0].astype(np.int64)
-    pos = np.searchsorted(nodes, listed)
-    if pos.max() >= len(nodes) or not np.array_equal(nodes[pos], listed):
-        raise SystemExit(f"{path}: lists a node the edge list does not contain")
-
-    ranks = np.empty(len(order))
-    ranks[pos] = table[:, 1]
-    return ranks
 def networkx_pagerank(edges, order, damping, max_iters):
     """Third-party cross-check.
 
-    The dense reference above is independent in method but was written by the
-    same hand as the code it checks, so a misunderstanding of the algorithm
-    itself (the dangling-node convention, say) could be reproduced in both.
-    networkx is an outside implementation, which rules that out.
+    The dense reference is independent in method but written by the same hand
+    as the code it checks, so a misunderstanding of the algorithm itself could
+    be reproduced in both; networkx is an outside implementation, which rules
+    that out.  Its default dangling handling -- spread over the personalization
+    vector, uniform unless asked otherwise -- matches ours, so the two are
+    directly comparable.
 
-    Returns a (ranks, note) pair; ranks is None when the check cannot run, and
-    note then says why.  networkx's default dangling handling -- spread over
-    the personalization vector, which defaults to uniform -- matches ours, so
-    the two are directly comparable.
+    Returns a (ranks, note) pair; ranks is None when the check cannot run and
+    note then says why.
     """
     try:
         import networkx as nx
@@ -233,7 +153,189 @@ def networkx_pagerank(edges, order, damping, max_iters):
     return np.array([ranks[node] for node in order]), None
 
 
-def main(argv=None):
+def top_nodes(ranks, order, k):
+    """The k highest-ranked nodes, as original SNAP ids, best first."""
+    return [order[i] for i in np.argsort(-ranks)[:k]]
+
+
+# --- the implementation under test ------------------------------------------
+
+def read_all_ranks(path, order):
+    """Read an -o ranks file into the order the references are indexed by.
+
+    The file lists one "snap_id rank" pair per node; `order` is sorted, which
+    is what lets searchsorted do the permutation in one vectorised step.
+    """
+    table = np.loadtxt(path, comments="#")
+    if table.ndim != 2 or len(table) != len(order):
+        raise SystemExit(f"{path}: expected {len(order)} ranks, found {len(table)}")
+
+    nodes = np.asarray(order, dtype=np.int64)
+    listed = table[:, 0].astype(np.int64)
+    pos = np.searchsorted(nodes, listed)
+    if pos.max() >= len(nodes) or not np.array_equal(nodes[pos], listed):
+        raise SystemExit(f"{path}: lists a node the edge list does not contain")
+
+    ranks = np.empty(len(order))
+    ranks[pos] = table[:, 1]
+    return ranks
+
+
+def parse_output(stdout, binary):
+    """Pull the top-k table, the rank sum and the convergence line out of what
+    the binary printed."""
+    top, rank_sum, converged, iterations = [], None, None, None
+    for line in stdout.splitlines():
+        if match := TOP_LINE.match(line):
+            top.append((int(match.group(3)), float(match.group(4))))
+        elif match := SUM_LINE.match(line):
+            rank_sum = float(match.group(1))
+        elif match := CONV_LINE.match(line):
+            converged = match.group(1) == "converged"
+            iterations = int(match.group(2))
+    if not top:
+        raise SystemExit(f"could not parse any ranking from {binary}:\n{stdout}")
+    return top, rank_sum, converged, iterations
+
+
+def run_binary(args, csr_path, ids_path, order):
+    """Run the C implementation and collect everything it reports.
+
+    It is also asked for every rank (-o), so the comparison can cover all N
+    values instead of the k it prints; that file carries full double precision,
+    so nothing is lost on the way.
+    """
+    command = [str(args.binary), str(csr_path), "-i", str(ids_path),
+               "-k", str(args.k), "-d", str(args.damping),
+               "-t", str(args.tolerance), "-n", str(args.max_iters)]
+    with tempfile.TemporaryDirectory() as tmp:
+        ranks_path = Path(tmp) / "all.ranks.txt"
+        try:
+            done = subprocess.run(command + ["-o", str(ranks_path)],
+                                  capture_output=True, text=True, check=True)
+        except FileNotFoundError:
+            raise SystemExit(f"{args.binary}: not built -- run 'make' first")
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(f"{args.binary} failed:\n{exc.stderr}")
+        ranks = read_all_ranks(ranks_path, order)
+
+    top, rank_sum, converged, iterations = parse_output(done.stdout, args.binary)
+    return Run(top, rank_sum, converged, iterations, ranks)
+
+
+# --- the comparisons --------------------------------------------------------
+
+def check_networkx(nx_ranks, reference, k, tolerance):
+    if top_nodes(nx_ranks, reference.order, k) != top_nodes(reference.ranks,
+                                                            reference.order, k):
+        return Check(False, "networkx and the dense reference disagree on the ranking")
+    worst = float(np.abs(nx_ranks - reference.ranks).max())
+    if worst > tolerance:
+        return Check(False, f"networkx differs from the dense reference "
+                            f"by {worst:.3e} > {tolerance:.0e}")
+    return Check(True, f"agrees with the dense reference to {worst:.3e}")
+
+
+def check_convergence(run):
+    """A run stopped at the iteration limit has not settled, so its ranks are
+    not the answer even when the top few happen to look right."""
+    if run.converged is None:
+        return Check(False, "could not tell whether the binary converged")
+    if not run.converged:
+        return Check(False, f"stopped at the iteration limit after {run.iterations}"
+                            f" iterations, so the ranks have not settled")
+    return Check(True, f"converged in {run.iterations} iterations")
+
+
+def check_top_k_order(run, reference, k, tolerance):
+    got = [node for node, _ in run.top]
+    want = top_nodes(reference.ranks, reference.order, k)
+    if got == want:
+        return Check(True, f"top-{k} ranking identical to the {reference.name} reference")
+    if sorted(got) != sorted(want):
+        return Check(False, f"the top-{k} node sets differ")
+
+    # Same nodes, different order.  Deep in the ranking the values are closer
+    # together than the two computations agree, so only a swap between values
+    # genuinely apart is a real disagreement.
+    swapped, worst_gap = compare_orderings(reference, got, want)
+    if worst_gap > tolerance:
+        return Check(False, f"top-{k} order differs on values up to {worst_gap:.3e} apart")
+    return Check(True, f"top-{k} ranking identical but for {swapped} positions, "
+                       f"all between values within {worst_gap:.3e}")
+
+
+def compare_orderings(reference, got, want):
+    """How many positions the two orderings disagree on, and how far apart in
+    rank value the worst of those disagreements is."""
+    nodes = np.asarray(reference.order, dtype=np.int64)
+    got = np.asarray(got, dtype=np.int64)
+    want = np.asarray(want, dtype=np.int64)
+    differ = got != want
+    gaps = np.abs(reference.ranks[np.searchsorted(nodes, got[differ])]
+                  - reference.ranks[np.searchsorted(nodes, want[differ])])
+    return int(differ.sum()), float(gaps.max())
+
+
+def check_top_values(run, want_values, tolerance):
+    worst = max(abs(got - want) for (_, got), want in zip(run.top, want_values))
+    if worst > tolerance:
+        return Check(False, f"largest rank difference {worst:.3e} > {tolerance:.0e}")
+    return Check(True, f"largest rank difference {worst:.3e}")
+
+
+def check_all_values(run, reference, tolerance):
+    n = len(reference.order)
+    difference = np.abs(run.ranks - reference.ranks)
+    worst = float(difference.max())
+    if worst > tolerance:
+        node = reference.order[int(difference.argmax())]
+        return Check(False, f"worst of all {n} ranks {worst:.3e} > {tolerance:.0e},"
+                            f" at node {node}")
+    return Check(True, f"all {n} ranks within {worst:.3e} of the {reference.name} reference")
+
+
+def check_rank_sum(run):
+    """The ranks are a probability distribution, so anything but 1 means
+    dangling mass was mishandled."""
+    if run.rank_sum is None or abs(run.rank_sum - 1.0) > 1e-6:
+        return Check(False, f"ranks sum to {run.rank_sum}, not 1 "
+                            f"(dangling mass is being lost)")
+    return Check(True, f"ranks sum to {run.rank_sum:.12f}")
+
+
+# --- driver -----------------------------------------------------------------
+
+def build_reference(args, edges, order, report):
+    """Compute the ranks everything else is compared against.
+
+    With --no-dense networkx is the reference itself; otherwise the dense
+    matrix is, and networkx becomes a cross-check on it.
+    """
+    if args.no_dense:
+        print("\n[networkx] third-party reference (dense check skipped)")
+        ranks, note = networkx_pagerank(edges, order, args.damping, args.max_iters)
+        if ranks is None:
+            raise SystemExit(f"--no-dense needs networkx: {note}")
+        print(f"      ok: converged, ranks sum to {ranks.sum():.12f}")
+        return Reference(ranks, "networkx", order)
+
+    n = len(order)
+    print(f"\n[dense] own reference ({n * n * 8 / 2**20:.0f} MiB matrix)")
+    ranks = dense_pagerank(edges, order, args.damping, 1e-15, args.max_iters)
+    print(f"      ok: converged, ranks sum to {ranks.sum():.12f}")
+    reference = Reference(ranks, "dense", order)
+
+    print("\n[networkx] third-party cross-check")
+    nx_ranks, note = networkx_pagerank(edges, order, args.damping, args.max_iters)
+    if nx_ranks is None:
+        print(f"      skipped: {note}")
+    elif report.record(check_networkx(nx_ranks, reference, args.k, args.value_tolerance)):
+        print("          (rules out the same misreading of the algorithm in both)")
+    return reference
+
+
+def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("edge_list", type=Path, help="SNAP .txt edge list")
     parser.add_argument("--csr", type=Path, help="default: edge list with .csr")
@@ -252,9 +354,13 @@ def main(argv=None):
     parser.add_argument("--max-nodes", type=int, default=MAX_DENSE_NODES,
                         help="refuse graphs larger than this (dense matrix is N^2)")
     parser.add_argument("--no-dense", action="store_true",
-                        help="skip the N x N reference and check against networkx alone, which makes the check usable on the larger graphs")
-    args = parser.parse_args(argv)
+                        help="skip the N x N reference and check against networkx "
+                             "alone, which makes the check usable on the larger graphs")
+    return parser.parse_args(argv)
 
+
+def main(argv=None):
+    args = parse_args(argv)
     csr_path = args.csr or args.edge_list.with_suffix(".csr")
     ids_path = args.ids or args.edge_list.with_suffix(".ids")
     for path in (args.edge_list, csr_path, ids_path):
@@ -272,130 +378,27 @@ def main(argv=None):
             f"This check is only meaningful on small graphs; raise --max-nodes "
             f"if you really have the memory.")
 
-    failures = []
-
-    print("\n[csr] binary CSR against the independent parse")
-    problems = check_csr(csr_path, ids_path, edges, order)
-    if problems:
-        failures.extend(problems)
-        for problem in problems:
-            print(f"      FAIL {problem}")
-    else:
-        print("      ok: rows are the true in-neighbour sets, sorted and unique")
-
-    if args.no_dense:
-        print("\n[networkx] third-party reference (dense check skipped)")
-        reference, nx_note = networkx_pagerank(edges, order, args.damping, args.max_iters)
-        if reference is None:
-            raise SystemExit(f"--no-dense needs networkx: {nx_note}")
-        reference_name = "networkx"
-        print(f"      ok: converged, ranks sum to {reference.sum():.12f}")
-    else:
-        print(f"\n[dense] own reference ({n * n * 8 / 2**20:.0f} MiB matrix)")
-        reference = dense_pagerank(edges, order, args.damping, 1e-15, args.max_iters)
-        reference_name = "dense"
-        print(f"      ok: converged, ranks sum to {reference.sum():.12f}")
-
-    order_desc = np.argsort(-reference)[:args.k]
-
-    if not args.no_dense:
-        print("\n[networkx] third-party cross-check")
-        nx_ranks, nx_note = networkx_pagerank(edges, order, args.damping, args.max_iters)
-        if nx_ranks is None:
-            print(f"      skipped: {nx_note}")
-        else:
-            nx_worst = float(np.abs(nx_ranks - reference).max())
-            nx_top = [order[i] for i in np.argsort(-nx_ranks)[:args.k]]
-            dense_top = [order[i] for i in order_desc]
-            if nx_top != dense_top:
-                failures.append("networkx and the dense reference disagree on the ranking")
-                print(f"      FAIL ranking differs\n        networkx {nx_top}\n        dense    {dense_top}")
-            elif nx_worst > args.value_tolerance:
-                failures.append(f"networkx differs from the dense reference by {nx_worst:.3e}")
-                print(f"      FAIL largest difference {nx_worst:.3e} > {args.value_tolerance:.0e}")
-            else:
-                print(f"      ok: agrees with the dense reference to {nx_worst:.3e}")
-                print("          (rules out the same misreading of the algorithm in both)")
+    report = Report()
+    reference = build_reference(args, edges, order, report)
 
     print(f"\n[binary] {args.binary}")
-    with tempfile.TemporaryDirectory() as tmp:
-        ranks_path = Path(tmp) / "all.ranks.txt"
-        top, rank_sum, converged, iterations = run_binary(
-            args.binary, csr_path, ids_path, args.k,
-            args.damping, args.tolerance, args.max_iters, ranks_path)
-        all_ranks = read_all_ranks(ranks_path, order)
+    run = run_binary(args, csr_path, ids_path, order)
+    want_values = [reference.ranks[i] for i in np.argsort(-reference.ranks)[:args.k]]
 
-    # A run that hit the iteration limit has not settled, so its ranks are not
-    # the answer even if the top few happen to look right.
-    if converged is None:
-        failures.append("could not tell whether the binary converged")
-        print("      FAIL no convergence line in the output")
-    elif not converged:
-        failures.append(f"the binary stopped at the iteration limit ({iterations} iterations)")
-        print(f"      FAIL stopped at the iteration limit after {iterations} iterations,"
-              f" so the ranks have not settled")
-    else:
-        print(f"      ok: converged in {iterations} iterations")
-
-    got_ids = [node for node, _ in top]
-    want_ids = [order[i] for i in order_desc]
-    got_values = [value for _, value in top]
-    want_values = [reference[i] for i in order_desc]
-
-    if got_ids != want_ids:
-        if sorted(got_ids) != sorted(want_ids):
-            failures.append("the top-k node sets differ")
-            print(f"      FAIL the top-{args.k} node sets differ")
-        else:
-            # Same nodes in a different order.  Deep in the ranking neighbouring
-            # ranks are closer together than the two computations agree, so a
-            # swap there says nothing; only a swap between values that are
-            # genuinely apart is a real disagreement.
-            nodes = np.asarray(order, dtype=np.int64)
-            got = np.asarray(got_ids, dtype=np.int64)
-            want = np.asarray(want_ids, dtype=np.int64)
-            differ = got != want
-            gaps = np.abs(reference[np.searchsorted(nodes, got[differ])]
-                          - reference[np.searchsorted(nodes, want[differ])])
-            worst_gap = float(gaps.max())
-            if worst_gap > args.value_tolerance:
-                failures.append(f"top-{args.k} order differs on values {worst_gap:.3e} apart")
-                print(f"      FAIL order differs on values up to {worst_gap:.3e} apart")
-            else:
-                print(f"      ok: top-{args.k} ranking identical but for {differ.sum()} "
-                      f"positions, all between values within {worst_gap:.3e}")
-    else:
-        print(f"      ok: top-{args.k} ranking identical to the {reference_name} reference")
-
-    worst = max(abs(g - w) for g, w in zip(got_values, want_values))
-    if worst > args.value_tolerance:
-        failures.append(f"rank values differ by up to {worst:.3e}")
-        print(f"      FAIL largest rank difference {worst:.3e} > {args.value_tolerance:.0e}")
-    else:
-        print(f"      ok: largest rank difference {worst:.3e}")
-    all_worst = float(np.abs(all_ranks - reference).max())
-    if all_worst > args.value_tolerance:
-        node = order[int(np.abs(all_ranks - reference).argmax())]
-        failures.append(f"over all {len(order)} ranks the worst difference is {all_worst:.3e}")
-        print(f"      FAIL worst of all {len(order)} ranks {all_worst:.3e} "
-              f"> {args.value_tolerance:.0e}, at node {node}")
-    else:
-        print(f"      ok: all {len(order)} ranks within {all_worst:.3e} "
-              f"of the {reference_name} reference")
-
-    if rank_sum is None or abs(rank_sum - 1.0) > 1e-6:
-        failures.append(f"ranks sum to {rank_sum}, not 1")
-        print(f"      FAIL ranks sum to {rank_sum} (dangling mass is being lost)")
-    else:
-        print(f"      ok: ranks sum to {rank_sum:.12f}")
+    report.record(check_convergence(run))
+    report.record(check_top_k_order(run, reference, args.k, args.value_tolerance))
+    report.record(check_top_values(run, want_values, args.value_tolerance))
+    report.record(check_all_values(run, reference, args.value_tolerance))
+    report.record(check_rank_sum(run))
 
     print()
-    for i, (node, value) in enumerate(top[:5], 1):
-        print(f"  {i}. SNAP id {node:>8}   C {value:.9f}   {reference_name} {want_values[i - 1]:.9f}")
+    for position, (node, value) in enumerate(run.top[:5], 1):
+        print(f"  {position}. SNAP id {node:>8}   C {value:.9f}   "
+              f"{reference.name} {want_values[position - 1]:.9f}")
 
-    if failures:
-        print(f"\nFAILED ({len(failures)} problem(s)):")
-        for failure in failures:
+    if report.failures:
+        print(f"\nFAILED ({len(report.failures)} problem(s)):")
+        for failure in report.failures:
             print(f"  - {failure}")
         return 1
     print("\nPASS: the C implementation matches an independent computation")

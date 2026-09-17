@@ -794,15 +794,13 @@ che non condividono codice con l'implementazione sotto esame
 (\texttt{tools/verify\_pagerank.py}):
 
 \begin{enumerate}
-  \item il file CSR binario viene confrontato con una rilettura
-    indipendente dell'edge list, effettuata in Python puro;
   \item PageRank viene ricalcolato su una \textbf{matrice densa} $N \times
     N$ mediante iterazione di potenza: nessun CSR, nessun ciclo di
     accumulo, quindi un errore nella rappresentazione sparsa non può
     sopravvivere al confronto;
   \item il riferimento denso viene a sua volta confrontato con
     \textbf{NetworkX}, implementazione di terze parti. Questo passo
-    esclude una classe di errori che i primi due non coprono: il
+    esclude una classe di errori che il confronto precedente non copre: il
     riferimento denso è indipendente nel metodo ma scritto sempre da me,
     quindi un fraintendimento dell'algoritmo potrebbe essere
     riprodotto identico in entrambi;
@@ -813,13 +811,22 @@ che non condividono codice con l'implementazione sotto esame
 \end{enumerate}
 
 \stacco
-Poiché la matrice densa richiede $N^2$ elementi, il punto 2 è possibile solo
+La conversione da testo a CSR non ha un livello dedicato, ma un suo errore non
+sfugge lo stesso: i riferimenti nascono dall'edge list originale
+(\texttt{.txt}), mentre il binario calcola dal \texttt{.csr}, e se i due non
+corrispondessero il confronto del punto 3 metterebbe a paragone il PageRank di
+due grafi diversi, fallendo su tutti i valori. Quello che manca non è la
+copertura ma la localizzazione: si saprebbe che qualcosa non torna, non se a
+sbagliare sia stato il convertitore o il nucleo di calcolo.
+
+\stacco
+Poiché la matrice densa richiede $N^2$ elementi, il punto 1 è possibile solo
 sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro i 5,6~TiB che
 servirebbero per \texttt{web-Google}. È questa la ragione per cui
 \texttt{wiki-Vote} fa parte dell'insieme di test.
 
 \stacco
-I due piani del punto 4 colgono cose diverse. Il confronto sui valori
+I due piani del punto 3 colgono cose diverse. Il confronto sui valori
 intercetta un punteggio sbagliato ovunque si trovi, anche in fondo alla
 classifica dove non sposterebbe la somma. Quello sull'ordine verifica la
 cosa per cui PageRank esiste, ma ha senso solo in testa: più in giù i
@@ -830,7 +837,7 @@ Uno scambio viene perciò segnalato come errore soltanto se avviene fra
 valori effettivamente distinti.
 
 \stacco
-Il controllo di convergenza al punto 4 non è ridondante: forzando
+Il controllo di convergenza al punto 3 non è ridondante: forzando
 l'arresto dopo 5 iterazioni il \emph{ranking} dei primi risultati è ancora
 corretto mentre i valori sono lontani dall'essersi stabilizzati, quindi
 verificare solo l'ordinamento accetterebbe un risultato quantitativamente
