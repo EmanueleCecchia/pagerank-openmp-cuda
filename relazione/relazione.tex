@@ -801,12 +801,11 @@ che non condividono codice con l'implementazione sotto esame
     accumulo, quindi un errore nella rappresentazione sparsa non può
     sopravvivere al confronto;
   \item il riferimento denso viene a sua volta confrontato con
-    \textbf{NetworkX}, implementazione di terze parti. Questo passo esclude
-    una classe di errori che i primi due non coprono: il riferimento denso
-    è indipendente nel metodo ma scritto dallo stesso autore del codice in
-    esame, quindi un fraintendimento dell'algoritmo (tipicamente la
-    convenzione sui nodi dangling) potrebbe essere riprodotto identico in
-    entrambi;
+    \textbf{NetworkX}, implementazione di terze parti. Questo passo
+    esclude una classe di errori che i primi due non coprono: il
+    riferimento denso è indipendente nel metodo ma scritto sempre da me,
+    quindi un fraintendimento dell'algoritmo potrebbe essere
+    riprodotto identico in entrambi;
   \item si verifica infine che il binario C sia \emph{giunto a convergenza},
     che il ranking e i valori coincidano e che la somma dei rank sia 1.
 \end{enumerate}
@@ -816,12 +815,6 @@ l'arresto dopo 5 iterazioni il \emph{ranking} dei primi risultati è ancora
 corretto mentre i valori sono lontani dall'essersi stabilizzati, quindi
 verificare solo l'ordinamento accetterebbe un risultato quantitativamente
 sbagliato.
-
-Lo strumento di verifica è stato a sua volta collaudato iniettando un
-guasto: ricostruendo il CSR da un grafo privato di 457 archi entranti in un
-nodo, la verifica fallisce a ogni livello, mentre il controllo sulla somma
-dei rank resta correttamente silenzioso perché il grafo alterato è
-internamente coerente.
 
 Poiché la matrice densa richiede $N^2$ elementi, questa verifica è
 possibile solo sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro
