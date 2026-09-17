@@ -740,9 +740,12 @@ lavoro}, lasciando inattivi i thread che hanno ricevuto solo nodi di grado
 basso. La dimensione del blocco (256) è un parametro che va calibrato provando.
 
 \paragraph{Alternanza dei buffer.}
-L'iterazione alterna due vettori scambiando i puntatori anziché copiare i
-dati; una sola \texttt{memcpy} finale è necessaria, e solo se il numero di
-scambi è dispari.
+L'iterazione alterna due vettori (\texttt{rank} e
+\texttt{next}) scambiando due puntatori
+(\texttt{cur}, che indica sempre i punteggi più recenti, e \texttt{nxt},
+dove si scrivono quelli nuovi) anziché copiare i dati; una sola
+\texttt{memcpy} finale è necessaria, e solo se il numero di scambi è
+dispari.
 
 \subsection{Implementazione ibrida OpenMP + CUDA}
 \label{sec:cuda}
