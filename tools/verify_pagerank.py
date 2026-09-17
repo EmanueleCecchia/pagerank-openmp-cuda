@@ -3,8 +3,8 @@
 
 Computes PageRank a second time, by a route that shares no code with the
 project, and compares the answer with what the C binary prints.  The SNAP edge
-list is re-parsed first, in plain Python (no numpy, none of
-tools/snap_to_csr.py), and everything below is built from that parse:
+list is re-parsed first, borrowing nothing from tools/snap_to_csr.py, and
+everything below is built from that parse:
 
   1. PageRank is computed on a *dense* N x N transition matrix by ordinary
      power iteration -- no CSR, no row pointers, no gather loop, so a bug in
@@ -81,21 +81,15 @@ class Report:
 # --- the independent answer -------------------------------------------------
 
 def parse_edges(path):
-    """Re-read the SNAP edge list with plain Python.
+    """Re-read the SNAP edge list, without borrowing anything from the converter.
 
-    No numpy and nothing from the converter: this is the independent view of
-    the graph that the references are built on.
+    Returns the unique edges as an (M, 2) array and the nodes in increasing
+    order of original id.  Duplicate edges are collapsed, which is what
+    networkx does too, so the references agree on what the graph is.
     """
-    edges = set()
-    nodes = set()
-    with open(path) as handle:
-        for line in handle:
-            if line.startswith("#"):
-                continue
-            src, dst = (int(field) for field in line.split())
-            edges.add((src, dst))
-            nodes.update((src, dst))
-    return edges, sorted(nodes)
+    raw = np.loadtxt(path, dtype=np.int64, comments="#", usecols=(0, 1))
+    raw = raw.reshape(-1, 2)
+    return np.unique(raw, axis=0), np.unique(raw).tolist()
 
 
 def dense_pagerank(edges, order, damping, tolerance, max_iters):
