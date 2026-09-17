@@ -697,6 +697,7 @@ limitata a un thread si otterrebbe un tempo peggiore
 comunque la creazione del team di thread: usarla come riferimento
 gonfierebbe silenziosamente ogni speed-up dichiarato.
 
+\stacco
 Il nucleo contiene due cicli paralleli per iterazione.
 
 \begin{lstlisting}[language=C,caption={Calcolo dei contributi e massa dangling.}]
@@ -711,9 +712,10 @@ for (v = 0; v < n; v++) {
 }
 \end{lstlisting}
 
+\stacco
 La clausola \texttt{reduction(+ : dangling)} assegna a ogni thread una copia
 privata della variabile, inizializzata a zero, e ne somma i valori al
-termine del ciclo. È la soluzione corretta \emph{e} veloce al problema
+termine del ciclo. È la soluzione corretta e veloce al problema
 dell'aggiornamento concorrente: una variabile condivisa protetta da lock
 serializzerebbe l'intero ciclo. Lo scheduling è \texttt{static} perché il
 lavoro per iterazione è costante.
@@ -729,12 +731,13 @@ for (v = 0; v < n; v++) {
 }
 \end{lstlisting}
 
-Qui lo scheduling è \texttt{dynamic}: la lunghezza delle righe varia di
-ordini di grandezza (su \texttt{web-BerkStan} da 0 a $84\,208$ elementi),
-quindi una suddivisione statica assegnerebbe a ogni thread lo stesso
-\emph{numero di righe} ma non la stessa \emph{quantità di lavoro}, lasciando
-inattivi i thread che hanno ricevuto solo nodi di grado basso. La dimensione
-del blocco (256) è un parametro di tuning.
+\stacco
+La clausola \texttt{reduction} su \texttt{error} funziona allo stesso modo,
+mentre lo scheduling è \texttt{dynamic}: la lunghezza delle righe varia di
+ordini di grandezza, quindi una suddivisione statica assegnerebbe a ogni
+thread lo stesso \emph{numero di righe} ma non la stessa \emph{quantità di
+lavoro}, lasciando inattivi i thread che hanno ricevuto solo nodi di grado
+basso. La dimensione del blocco (256) è un parametro che va calibrato provando.
 
 \paragraph{Alternanza dei buffer.}
 L'iterazione alterna due vettori scambiando i puntatori anziché copiare i
