@@ -122,8 +122,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     }
 
     /* An odd number of swaps leaves the result in our scratch buffer, which
-    * is about to be freed: if cur still points there, copy it back; without
-    * this the caller would keep the previous iteration's ranks. */
+     * is about to be freed: if cur still points there, copy it back; without
+     * this the caller would keep the previous iteration's ranks. */
     if (cur != rank) {
         memcpy(rank, cur, (size_t)n * sizeof(rank_t));
     }
