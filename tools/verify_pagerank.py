@@ -1,33 +1,24 @@
 #!/usr/bin/env python3
 """Independent correctness check for the PageRank implementation.
 
-Computes PageRank a second time, by a route that shares no code with the
-project, and compares the answer with what the C implementation produces.  The
-SNAP edge list is re-parsed first, borrowing nothing from
-tools/snap_to_csr.py, and everything below is built from that parse:
+Computes PageRank a second time, by routes that share no code with the project,
+and compares the answer with what the C implementation produces.  Three results
+are computed, and they form a chain:
 
-  1. PageRank is computed on a *dense* N x N transition matrix by ordinary
-     power iteration -- no CSR, no row pointers, no gather loop, so a bug in
-     the sparse representation cannot hide here;
-  2. that dense reference is itself checked against networkx, an outside
-     implementation, which rules out a misreading of the algorithm shared by
-     both (skipped when networkx or scipy is missing);
-  3. the C executable is run and its output compared against the above.
+    networkx  <->  dense N x N  <->  C executable
+   third party       reference        under test
 
-Because the references come from the .txt edge list while the executable
-computes from the .csr, a converter bug shows up here too: the two would
-simply be ranking different graphs.
+  1. the dense N x N transition matrix, by power iteration, is the reference;
+  2. networkx is compared with it, which is what vouches for the reference
+     itself (skipped when networkx or scipy is missing);
+  3. the C executable is compared with that same reference, not with
+     networkx directly.
 
-The dense matrix costs N^2 * 8 bytes, so step 1 only works on small graphs:
-wiki-Vote needs ~405 MB, while web-Google would need ~6 PB.  That is exactly
-why wiki-Vote is in the dataset ladder -- it is not there to be fast, it is
-there to be the one graph where a brute-force answer is computable at all.
+The dense matrix is N^2 * 8 bytes, so it only works on small graphs.
 
---no-dense drops steps 1 and 2, promoting networkx from a check on the dense
-reference to the reference itself.  That loses the ability to tell an
-implementation bug from a misread algorithm -- whichever step fails tells you
-where to look -- but it removes the N^2 wall, so the larger graphs can be
-verified too: web-Google takes about 2 minutes, web-BerkStan about 4.
+--no-dense drops it and promotes networkx to reference.
+That is how the larger graphs are checked: web-Google takes
+about 2 minutes, web-BerkStan about 4.
 
 Usage:
     python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
@@ -82,11 +73,10 @@ class Report:
 # --- the independent answer -------------------------------------------------
 
 def parse_edges(path):
-    """Re-read the SNAP edge list, without borrowing anything from the converter.
+    """Re-read the SNAP edge list, borrowing nothing from the converter.
 
     Returns the unique edges as an (M, 2) array and the nodes in increasing
-    order of original id.  Duplicate edges are collapsed, which is what
-    networkx does too, so the references agree on what the graph is.
+    order of original id.  Duplicate edges are collapsed, as networkx does too.
     """
     raw = np.loadtxt(path, dtype=np.int64, comments="#", usecols=(0, 1))
     raw = raw.reshape(-1, 2)
@@ -108,7 +98,6 @@ def dense_pagerank(edges, order, damping, tolerance, max_iters):
 
     rank = np.full(n, 1.0 / n)
     for _ in range(max_iters):
-        # The dangling nodes' rank has nowhere to go, so it is spread evenly.
         nxt = (1.0 - damping) / n + damping * (matrix @ rank + rank[dangling].sum() / n)
         if np.abs(nxt - rank).sum() < tolerance:
             return nxt
@@ -119,10 +108,7 @@ def dense_pagerank(edges, order, damping, tolerance, max_iters):
 def networkx_pagerank(edges, order, damping, max_iters):
     """Third-party cross-check.
 
-    The dense reference is independent in method but written by the same hand
-    as the code it checks, so a misunderstanding of the algorithm itself could
-    be reproduced in both; networkx is an outside implementation, which rules
-    that out.  Its default dangling handling -- spread over the personalization
+    networkx's default dangling handling -- spread over the personalization
     vector, uniform unless asked otherwise -- matches ours, so the two are
     directly comparable.
 
@@ -197,8 +183,7 @@ def run_executable(args, csr_path, ids_path, order):
     """Run the C implementation and collect everything it reports.
 
     It is also asked for every rank (-o), so the comparison can cover all N
-    values instead of the k it prints; that file carries full double precision,
-    so nothing is lost on the way.
+    values and not just the k it prints.
     """
     command = [str(args.c_executable), str(csr_path), "-i", str(ids_path),
                "-k", str(args.k), "-d", str(args.damping),
@@ -222,6 +207,7 @@ def run_executable(args, csr_path, ids_path, order):
 # --- the comparisons --------------------------------------------------------
 
 def check_networkx(nx_ranks, reference, k, tolerance):
+    """The middle link: the outside implementation against the reference."""
     if top_nodes(nx_ranks, reference.order, k) != top_nodes(reference.ranks,
                                                             reference.order, k):
         return Check(False, "networkx and the dense reference disagree on the ranking")
@@ -233,8 +219,6 @@ def check_networkx(nx_ranks, reference, k, tolerance):
 
 
 def check_convergence(run):
-    """A run stopped at the iteration limit has not settled, so its ranks are
-    not the answer even when the top few happen to look right."""
     if run.converged is None:
         return Check(False, "could not tell whether the executable converged")
     if not run.converged:
@@ -251,9 +235,8 @@ def check_top_k_order(run, reference, k, tolerance):
     if sorted(got) != sorted(want):
         return Check(False, f"the top-{k} node sets differ")
 
-    # Same nodes, different order.  Deep in the ranking the values are closer
-    # together than the two computations agree, so only a swap between values
-    # genuinely apart is a real disagreement.
+    # Same nodes, different order: only a swap between values genuinely apart
+    # counts as a disagreement.
     swapped, worst_gap = compare_orderings(reference, got, want)
     if worst_gap > tolerance:
         return Check(False, f"top-{k} order differs on values up to {worst_gap:.3e} apart")
@@ -292,8 +275,6 @@ def check_all_values(run, reference, tolerance):
 
 
 def check_rank_sum(run):
-    """The ranks are a probability distribution, so anything but 1 means
-    dangling mass was mishandled."""
     if run.rank_sum is None or abs(run.rank_sum - 1.0) > 1e-6:
         return Check(False, f"ranks sum to {run.rank_sum}, not 1 "
                             f"(dangling mass is being lost)")
