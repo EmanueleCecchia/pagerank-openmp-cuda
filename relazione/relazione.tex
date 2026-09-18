@@ -891,7 +891,8 @@ pesante sulle righe lunghe (Tabella~\ref{tab:bins}).
 \subsection{Correttezza}
 La Tabella~\ref{tab:correttezza} raccoglie i confronti fra le tre
 implementazioni. Lo scarto è la maggiore differenza in valore assoluto fra i
-rank corrispondenti, cercata su tutti gli $N$ nodi.
+rank corrispondenti, cercata su tutti gli $N$ nodi. I confronti usano la build
+sequenziale; ripetuti con quella OpenMP danno lo stesso scarto.
 
 \begin{table}[h]
 \centering
@@ -984,7 +985,12 @@ iterazioni e con ranking identico. Il guadagno è coerente con il
 dimezzamento dei byte trasferiti per ogni rank, ed è un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
 
-Il limite della singola precisione si manifesta sulla soglia di
+Sui valori le due varianti si discostano, in differenza relativa fra i vettori
+di rank, di $2{,}2\cdot10^{-7}$: è l'ordine di grandezza dell'epsilon di
+macchina della singola precisione ($1{,}19\cdot10^{-7}$), quindi non si perde
+nulla oltre al limite intrinseco del formato.
+
+Il limite della singola precisione si manifesta invece sulla soglia di
 convergenza: su \texttt{web-Google} l'errore $L_1$ non scende sotto
 $\approx 5\cdot10^{-9}$, per cui una tolleranza di $10^{-9}$ non viene mai
 raggiunta mentre la doppia precisione converge in 104 iterazioni. Alla
