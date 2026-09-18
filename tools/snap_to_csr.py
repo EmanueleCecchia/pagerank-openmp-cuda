@@ -113,18 +113,6 @@ def write_csr(path, row_ptr, col_idx, out_deg):
         out_deg.tofile(handle)
 
 
-def load_csr(path):
-    """Read back a .csr file as (row_ptr, col_idx, out_deg).  For validation."""
-    with open(path, "rb") as handle:
-        if handle.read(8) != MAGIC:
-            raise ValueError(f"{path} is not a {MAGIC.decode()} file")
-        n, m = np.fromfile(handle, dtype=np.uint64, count=2)
-        row_ptr = np.fromfile(handle, dtype=PTR_DTYPE, count=int(n) + 1)
-        col_idx = np.fromfile(handle, dtype=IDX_DTYPE, count=int(m))
-        out_deg = np.fromfile(handle, dtype=IDX_DTYPE, count=int(n))
-    return row_ptr, col_idx, out_deg
-
-
 def report(stats):
     print(f"  nodes                {stats['nodes']:>12,}")
     print(f"  edges                {stats['edges']:>12,}")
