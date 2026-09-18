@@ -827,11 +827,11 @@ da come l'ordinamento spezza i pareggi. Uno scambio viene perciò segnalato
 come errore soltanto se avviene fra valori effettivamente distinti.
 
 \stacco
-Il controllo di convergenza al punto 3 non è ridondante: forzando
-l'arresto dopo 5 iterazioni il \emph{ranking} dei primi risultati è ancora
-corretto mentre i valori sono lontani dall'essersi stabilizzati, quindi
-verificare solo l'ordinamento accetterebbe un risultato quantitativamente
-sbagliato.
+Il controllo di convergenza al punto 3 è stato implementato perché il riferimento e il
+programma ricevono lo stesso tetto di iterazioni, e se lo si abbassa entrambi
+si fermano allo stesso punto, con valori che coincidono pur essendo lontani
+dall'essersi stabilizzati. Il confronto avrebbe allora successo su un risultato
+quantitativamente sbagliato, accettandolo come corretto.
 
 % =====================================================================
 \section{Risultati sperimentali}
