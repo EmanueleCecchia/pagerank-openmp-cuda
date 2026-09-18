@@ -889,26 +889,41 @@ maggiori sollecitano aspetti diversi, perché \texttt{web-BerkStan} ha un
 pesante sulle righe lunghe (Tabella~\ref{tab:bins}).
 
 \subsection{Correttezza}
-\begin{center}
-\begin{tabular}{@{}lrl@{}}
+La Tabella~\ref{tab:correttezza} raccoglie i confronti fra le tre
+implementazioni. Lo scarto è la maggiore differenza in valore assoluto fra i
+rank corrispondenti, cercata su tutti gli $N$ nodi.
+
+\begin{table}[h]
+\centering
+\caption{Confronto fra le tre implementazioni.}
+\label{tab:correttezza}
+\begin{tabular}{@{}llrl@{}}
 \toprule
-\textbf{Confronto} & \textbf{Accordo} & \textbf{Esclude} \\
+\textbf{Confronto} & \textbf{Istanza} & \textbf{Scarto} & \textbf{Esclude} \\
 \midrule
-C contro riferimento denso   & $7{,}1\cdot10^{-14}$ & errori in CSR o nel ciclo di accumulo \\
-C contro NetworkX, grafi maggiori & $6{,}5\cdot10^{-11}$ & errori visibili solo su scala grande \\
-NetworkX contro denso        & $4{,}5\cdot10^{-12}$ & fraintendimenti dell'algoritmo \\
-OpenMP contro sequenziale    & $2{,}1\cdot10^{-14}$ & race condition \\
-\texttt{float} contro \texttt{double} & $2{,}2\cdot10^{-7}$ & perdita di precisione anomala \\
-Somma dei rank (ogni prova)  & $1{,}000000$         & dispersione della massa dangling \\
+NetworkX contro denso & \texttt{wiki-Vote} & $4{,}5\cdot10^{-12}$ & fraintendimenti dell'algoritmo \\
+C contro denso        & \texttt{wiki-Vote} & $7{,}1\cdot10^{-14}$ & errori nella rappresentazione dei dati \\
+C contro NetworkX     & grafi maggiori     & $6{,}5\cdot10^{-11}$ & errori su grafi grandi \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{table}
 
-Lo scarto relativo fra OpenMP e sequenziale è dovuto unicamente al diverso
-ordine di somma introdotto dalla riduzione. Lo scarto della versione
-\texttt{float} coincide con l'epsilon di macchina della singola precisione
-($1{,}19\cdot10^{-7}$): non si perde quindi nulla oltre al limite
-intrinseco del formato.
+\stacco
+Due ulteriori confronti riguardano varianti della stessa implementazione, e si
+misurano come differenza \emph{relativa} fra i vettori di rank prodotti. Su
+\texttt{web-Google} la build OpenMP si discosta da quella sequenziale di al più
+$2{,}1\cdot10^{-14}$, scarto dovuto unicamente al diverso ordine di somma
+introdotto dalla riduzione e quindi incompatibile con una \emph{race
+condition}, che produrrebbe differenze ben più grandi e irriproducibili. La
+variante \texttt{float} se ne discosta di $2{,}2\cdot10^{-7}$, che coincide con
+l'epsilon di macchina della singola precisione ($1{,}19\cdot10^{-7}$): non si
+perde quindi nulla oltre al limite intrinseco del formato.
+
+\stacco
+In tutte le 72 esecuzioni registrate in \texttt{results/bench.csv} la somma dei
+rank vale 1, con uno scarto massimo di $1{,}4\cdot10^{-11}$ in doppia
+precisione e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si
+disperde.
 
 \subsection{Scalabilità della versione OpenMP}
 \label{sec:scalabilita}
