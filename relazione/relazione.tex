@@ -858,8 +858,7 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 
 \subsection{Istanze di prova}
 Sono stati usati quattro grafi reali della collezione
-SNAP~\cite{snap}, scelti in modo da coprire circa tre ordini di grandezza
-nel numero di archi (fattore $670\times$ fra il minimo e il massimo).
+SNAP~\cite{snap}.
 
 \begin{table}[h]
 \centering
@@ -878,10 +877,14 @@ soc-LiveJournal1 & 4\,847\,571 & 68\,993\,773   & 539\,119    & 13\,906  & 318,7
 \end{tabular}
 \end{table}
 
-I due grafi web sollecitano aspetti diversi: \texttt{web-BerkStan} ha un
-singolo \emph{hub} estremo ($84\,208$ archi entranti), mentre
-\texttt{soc-LiveJournal1} ha la distribuzione più pesante nella fascia
-intermedia (Tabella~\ref{tab:bins}).
+\stacco
+Ogni istanza ha un ruolo: \texttt{wiki-Vote} è troppo piccola perché i tempi
+siano significativi e resta nell'insieme come riferimento di correttezza
+(Sezione~\ref{sec:verifica}); \texttt{web-Google}, non presentando
+particolarità strutturali, fa da caso di riferimento; le due
+maggiori sollecitano aspetti diversi, perché \texttt{web-BerkStan} ha un
+\emph{hub} estremo mentre \texttt{soc-LiveJournal1} ha la distribuzione più
+pesante sulle righe lunghe (Tabella~\ref{tab:bins}).
 
 \subsection{Correttezza}
 \begin{center}
@@ -966,8 +969,7 @@ I tempi di \texttt{wiki-Vote} non sono riportati in
 Tabella~\ref{tab:scaling}: con durate dell'ordine del millesimo di secondo
 la dispersione fra ripetizioni della stessa configurazione raggiunge un
 fattore $51\times$, il che significa che si misurerebbe l'avvio del team di
-thread e non l'algoritmo. Il grafo resta nell'insieme di prova con il ruolo
-di riferimento di correttezza (Sezione~\ref{sec:verifica}).
+thread e non l'algoritmo.
 
 \subsection{Confronto fra le varianti \texttt{float} e \texttt{double}}
 La variante in singola precisione è più rapida del $32\%$ su
