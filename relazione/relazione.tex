@@ -795,9 +795,11 @@ che non condividono codice con l'implementazione sotto esame
 
 \begin{enumerate}
   \item PageRank viene ricalcolato su una \textbf{matrice densa} $N \times N$,
-    con codice scritto da me; 
+    applicando l'iterazione~\eqref{eq:matriciale} con un solo prodotto
+    matrice-vettore anziché con i due cicli del nucleo di calcolo; il codice è
+    scritto da me;
   \item il riferimento denso viene confrontato con
-    \textbf{NetworkX}, implementazione di terze parti;
+    \textbf{NetworkX}; il codice è di terze parti;
   \item si verifica infine che il risultato del \textbf{programma C} 
     coincida con il riferimento.
     Prima del confronto si verificano due condizioni sul risultato stesso:
