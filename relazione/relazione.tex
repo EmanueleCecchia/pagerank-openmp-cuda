@@ -909,17 +909,6 @@ C contro NetworkX     & grafi maggiori     & $6{,}5\cdot10^{-11}$ & errori su gr
 \end{table}
 
 \stacco
-Due ulteriori confronti riguardano varianti della stessa implementazione, e si
-misurano come differenza \emph{relativa} fra i vettori di rank prodotti. Su
-\texttt{web-Google} la build OpenMP si discosta da quella sequenziale di al più
-$2{,}1\cdot10^{-14}$, scarto dovuto unicamente al diverso ordine di somma
-introdotto dalla riduzione e quindi incompatibile con una \emph{race
-condition}, che produrrebbe differenze ben più grandi e irriproducibili. La
-variante \texttt{float} se ne discosta di $2{,}2\cdot10^{-7}$, che coincide con
-l'epsilon di macchina della singola precisione ($1{,}19\cdot10^{-7}$): non si
-perde quindi nulla oltre al limite intrinseco del formato.
-
-\stacco
 In tutte le 72 esecuzioni registrate in \texttt{results/bench.csv} la somma dei
 rank vale 1, con uno scarto massimo di $1{,}4\cdot10^{-11}$ in doppia
 precisione e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si
