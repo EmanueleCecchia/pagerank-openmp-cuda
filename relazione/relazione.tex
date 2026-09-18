@@ -794,47 +794,37 @@ che non condividono codice con l'implementazione sotto esame
 (\texttt{tools/verify\_pagerank.py}):
 
 \begin{enumerate}
-  \item PageRank viene ricalcolato su una \textbf{matrice densa} $N \times
-    N$ mediante iterazione di potenza: nessun CSR, nessun ciclo di
-    accumulo, quindi un errore nella rappresentazione sparsa non può
-    sopravvivere al confronto;
-  \item il riferimento denso viene a sua volta confrontato con
-    \textbf{NetworkX}, implementazione di terze parti. Questo passo
-    esclude una classe di errori che il confronto precedente non copre: il
-    riferimento denso è indipendente nel metodo ma scritto sempre da me,
-    quindi un fraintendimento dell'algoritmo potrebbe essere
-    riprodotto identico in entrambi;
-  \item si verifica infine che il programma C sia \emph{giunto a convergenza},
+  \item PageRank viene ricalcolato su una \textbf{matrice densa} $N \times N$,
+    con codice scritto da me; 
+  \item il riferimento denso viene confrontato con
+    \textbf{NetworkX}, implementazione di terze parti;
+  \item si verifica infine che il \textbf{programma C} sia \emph{giunto a convergenza},
     che la somma dei rank sia 1 e che il risultato coincida: sia relativamente a 
     \emph{tutti} i valori, sia per quanto riguarda l'\emph{ordine} dei primi
     $k=100$ nodi.
 \end{enumerate}
 
 \stacco
-La conversione da testo a CSR non ha un livello dedicato, ma un suo errore non
-sfugge lo stesso: i riferimenti nascono dall'edge list originale
-(\texttt{.txt}), mentre il programma calcola dal \texttt{.csr}, e se i due non
-corrispondessero il confronto del punto 3 metterebbe a paragone il PageRank di
-due grafi diversi, fallendo su tutti i valori. Quello che manca non è la
-copertura ma la localizzazione: si saprebbe che qualcosa non torna, non se a
-sbagliare sia stato il convertitore o il nucleo di calcolo.
+Un errore nella conversione da testo a CSR non sfugge: 
+i risultati dei riferimenti (matrice densa e NetworkX) nascono dall'edge list originale
+(\texttt{.txt}), mentre il programma C calcola dal \texttt{.csr}: se i due non
+corrispondessero, il confronto metterebbe a paragone il PageRank di due grafi
+diversi e i valori non coinciderebbero.
 
 \stacco
 Poiché la matrice densa richiede $N^2$ elementi, il punto 1 è possibile solo
 sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro i 5,6~TiB che
 servirebbero per \texttt{web-Google}. È questa la ragione per cui
-\texttt{wiki-Vote} fa parte dell'insieme di test.
+\texttt{wiki-Vote} fa parte dell'insieme di test. Invece, sui grafi maggiori 
+(\texttt{web-Google}, \texttt{web-BerkStan}),
+il confronto del programma C con NetworkX è l'unico possibile.
 
 \stacco
-I due piani del punto 3 colgono cose diverse. Il confronto sui valori
-intercetta un punteggio sbagliato ovunque si trovi, anche in fondo alla
-classifica dove non sposterebbe la somma. Quello sull'ordine verifica la
-cosa per cui PageRank esiste, ma ha senso solo in testa: più in giù i
-punteggi si addensano fino a coincidere --- i 4734 nodi di
-\texttt{wiki-Vote} senza archi entranti hanno tutti lo stesso valore ---
-e l'ordine fra pari dipende solo da come l'ordinamento spezza i pareggi.
-Uno scambio viene perciò segnalato come errore soltanto se avviene fra
-valori effettivamente distinti.
+Il controllo viene svolto sia su tutti i valori che sull'ordine dei primi $k$ nodi.
+Quello sull'ordine ha senso solo in testa: più in giù i
+punteggi si addensano fino a coincidere e l'ordine fra pari dipende solo 
+da come l'ordinamento spezza i pareggi. Uno scambio viene perciò segnalato 
+come errore soltanto se avviene fra valori effettivamente distinti.
 
 \stacco
 Il controllo di convergenza al punto 3 non è ridondante: forzando
@@ -842,16 +832,6 @@ l'arresto dopo 5 iterazioni il \emph{ranking} dei primi risultati è ancora
 corretto mentre i valori sono lontani dall'essersi stabilizzati, quindi
 verificare solo l'ordinamento accetterebbe un risultato quantitativamente
 sbagliato.
-
-\stacco
-L'opzione \texttt{-{}-no-dense} rinuncia a quel punto e confronta il programma
-direttamente con NetworkX, che non ha il vincolo quadratico. Si perde la
-capacità di localizzare un eventuale errore --- è il livello che fallisce a
-dire se il difetto stia nell'implementazione o nella comprensione
-dell'algoritmo --- ma la verifica diventa possibile sui grafi maggiori:
-\texttt{web-Google} e \texttt{web-BerkStan}. Su entrambi il programma concorda
-con NetworkX su tutti i valori entro $7 \cdot 10^{-11}$, e sul ranking dei
-primi cento nodi a meno di scambi fra punteggi identici.
 
 % =====================================================================
 \section{Risultati sperimentali}

@@ -15,10 +15,8 @@ are computed, and they form a chain:
      networkx directly.
 
 The dense matrix is N^2 * 8 bytes, so it only works on small graphs.
-
 --no-dense drops it and promotes networkx to reference.
-That is how the larger graphs are checked: web-Google takes
-about 2 minutes, web-BerkStan about 4.
+That is how the larger graphs are checked.
 
 Usage:
     python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
