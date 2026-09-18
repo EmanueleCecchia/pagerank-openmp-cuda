@@ -137,7 +137,7 @@ against the C executable. Three checks:
 - **networkx**, a third-party implementation, against that dense reference:
   the dense code is independent in method but shares an author with the code
   it checks, so this rules out the same misreading of the algorithm appearing
-  in both (skipped automatically if networkx or scipy is missing);
+  in both;
 - the C executable itself — that it **converged** rather than hitting the
   iteration limit, that the top-k ranking and values match, and that the ranks
   sum to 1 (which fails if dangling-node mass is mishandled).

@@ -10,7 +10,7 @@ are computed, and they form a chain:
 
   1. the dense N x N transition matrix, by power iteration, is the reference;
   2. networkx is compared with it, which is what vouches for the reference
-     itself (skipped when networkx or scipy is missing);
+     itself;
   3. the C executable is compared with that same reference, not with
      networkx directly.
 
@@ -128,7 +128,8 @@ def networkx_pagerank(edges, order, damping, max_iters):
         # surfaces here rather than at the import above.
         ranks = nx.pagerank(graph, alpha=damping, tol=1e-14, max_iter=max_iters)
     except ImportError as exc:
-        return None, f"networkx needs a package that is missing ({exc.name})"
+        missing = exc.name or "a package"
+        return None, f"networkx needs {missing}, which is not installed ({exc})"
     except nx.PowerIterationFailedConvergence:
         return None, f"networkx did not converge within {max_iters} iterations"
     return np.array([ranks[node] for node in order]), None
@@ -306,8 +307,8 @@ def build_reference(args, edges, order, report):
     print("\n[networkx] third-party cross-check")
     nx_ranks, note = networkx_pagerank(edges, order, args.damping, args.max_iters)
     if nx_ranks is None:
-        print(f"      skipped: {note}")
-    elif report.record(check_networkx(nx_ranks, reference, args.k, args.value_tolerance)):
+        raise SystemExit(f"the networkx cross-check cannot run: {note}")
+    if report.record(check_networkx(nx_ranks, reference, args.k, args.value_tolerance)):
         print("          (rules out the same misreading of the algorithm in both)")
     return reference
 
