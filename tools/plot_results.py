@@ -5,9 +5,7 @@ Produce relazione/figure/scalabilita.pdf (vettoriale, per LaTeX) e un PNG
 di controllo. Il riferimento per lo speed-up è la build sequenziale vera
 (compilata senza -fopenmp), non la build OpenMP limitata a un thread.
 
-wiki-Vote e' escluso: con tempi dell'ordine del millesimo di secondo la
-dispersione fra ripetizioni raggiunge un fattore 51, quindi misurerebbe
-l'avvio dei thread e non l'algoritmo.
+wiki-Vote e' escluso
 """
 
 import collections
