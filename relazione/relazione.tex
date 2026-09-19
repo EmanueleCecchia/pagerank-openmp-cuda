@@ -983,17 +983,22 @@ il ciclo interno passa la maggior parte del tempo in attesa della lettura
 anziché capacità di calcolo.
 
 \paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
-Il confronto fra i due grafi di taglia media misura quanto pesa quell'attesa.
 A 4 thread \texttt{web-Google} impiega $0{,}459$~s contro i $0{,}254$~s di \texttt{web-BerkStan}, l'$81\,\%$
-in più, e non è una questione di iterazioni: ne esegue 62 contro 64, quindi per
-iterazione il divario sale all'$86\,\%$. Non è nemmeno una questione di lavoro
+in più, e non è una questione di iterazioni perché ne esegue di meno (62 contro 64).
+Non è nemmeno una questione di lavoro
 svolto, perché \texttt{web-BerkStan} ha il $49\,\%$ di archi in più: a parità di
-arco \texttt{web-Google} costa $1{,}45$~ns contro $0{,}52$, quasi il triplo.
+arco \texttt{web-Google} costa $1{,}45$~ns 
+\footnote{0,458 s  /  62 iterazioni = 0,0074; 0,0074 s  /  5105039 archi = 1,45 ns per arco.} 
+contro $0{,}52$ di \texttt{web-BerkStan}, quasi il triplo.
 
 \stacco
-La forma delle righe non lo spiega. \texttt{web-Google} ha il $28\,\%$ di righe
-in più, che è il massimo che un costo fisso per riga potrebbe giustificare a
-fronte dell'$86\,\%$ osservato;
+Ogni riga --- i predecessori di un nodo --- porta un costo fisso (leggere i due
+estremi in \texttt{row\_ptr}, scrivere il rank nuovo e aggiornare l'errore),
+e \texttt{web-Google} ha il $28\,\%$ di nodi
+in più. Quel $28\,\%$ è però un tetto di miglioramento ideale:
+lo si raggiungerebbe solo se gli archi
+fossero gratis, mentre il divario osservato è l'$86\,\%$\footnote{L'$81\,\%$
+aggiustato per il numero di iterazioni.}.
 Non lo spiega neppure la concentrazione nelle righe lunghe:
 \texttt{soc-LiveJournal1} ha le righe più lunghe dei tre e il $60\,\%$ degli
 archi oltre i 32 predecessori, quasi quanto il $67\,\%$ di
