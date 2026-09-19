@@ -977,10 +977,11 @@ sul 60--70\,\% a 4 e sul 30\,\% a 8.
 \texttt{web-Google} e \texttt{web-BerkStan} sono più veloci a 4 thread che a 8,
 mentre \texttt{soc-LiveJournal1} resta sostanzialmente stabile. Il processore
 possiede 4 core fisici presentati come 8 thread logici; i due thread che
-condividono un core condividono anche la via di accesso alla memoria. Poiché
-il ciclo interno passa la maggior parte del tempo in attesa della lettura
-\texttt{contrib[col\_idx[j]]}, i thread aggiuntivi producono contesa
-anziché capacità di calcolo.
+stanno sullo stesso core condividono anche cache e unità di accesso alla memoria. 
+Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
+\texttt{contrib[col\_idx[j]]}, i thread aggiuntivi raddoppiano le richieste,
+non le unità che le servono. Il simultaneous multithreading (SMT) rende quando un thread calcola
+mentre l'altro aspetta, ma qui aspettano entrambi.
 
 \paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
 A 4 thread \texttt{web-Google} impiega $0{,}459$~s contro i $0{,}254$~s di \texttt{web-BerkStan}, l'$81\,\%$
