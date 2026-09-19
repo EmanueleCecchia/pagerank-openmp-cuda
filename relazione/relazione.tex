@@ -762,26 +762,33 @@ blocco per riga a seconda della sua lunghezza).}
 
 \paragraph{Perché una granularità variabile.}
 La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info.c},
-è riportata in Tabella~\ref{tab:bins}: nei tre grafi maggiori fra il 45\,\% e
-il 64\,\% delle righe contiene al più 4 elementi, mentre singole righe
-raggiungono decine di migliaia. Questo giustifica quantitativamente la
-scelta: invece di assegnare sempre un thread a ogni riga, a seconda della
-sua lunghezza le si assegna un thread, un warp o un blocco intero, che si
-dividono gli elementi della riga.
+è riportata in Tabella~\ref{tab:bins}, e le sue due metà dicono cose
+opposte. Nei tre grafi maggiori fra il 45\,\% e il 64\,\% delle righe
+contiene al più 4 elementi, ma quelle righe valgono appena il 6--16\,\%
+degli archi; le righe oltre i 32 elementi sono fra il 2,6 e il 10,7\,\% e ne
+raccolgono dal 40 al 67\,\%, con singole righe che arrivano a decine di
+migliaia di predecessori. Queste considerazioni vanno a giustificare la scelta: 
+le righe vengono raggruppate per lunghezza, così che un warp o un blocco 
+riceva righe di dimensione simile e nessun thread resti inattivo ad aspettare 
+gli altri.
 
 \begin{table}[h]
 \centering
-\caption{Distribuzione delle lunghezze di riga (predecessori per nodo).}
+\caption{Distribuzione delle lunghezze di riga (predecessori per nodo) 
+e per ciascuna classe, la percentuale di archi rispetto al totale.}
 \label{tab:bins}
-\begin{tabular}{@{}lrrrrr@{}}
+\begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
-\textbf{Grafo} & \textbf{0} & \textbf{1--4} & \textbf{5--32} &
-\textbf{$>32$} & \textbf{max} \\
+& \textbf{0} & \multicolumn{2}{c}{\textbf{1--4}} &
+\multicolumn{2}{c}{\textbf{5--32}} & \multicolumn{2}{c}{\textbf{>32}} & \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+\textbf{Grafo} & righe & righe & archi & righe & archi & righe & archi &
+\textbf{max} \\
 \midrule
-wiki-Vote        & 66,5\,\% & 3,0\,\%  & 12,9\,\% & 17,6\,\% & 457 \\
-web-Google       & 18,4\,\% & 56,7\,\% & 22,3\,\% & 2,6\,\%  & 6\,326 \\
-web-BerkStan     & 9,9\,\%  & 64,2\,\% & 22,6\,\% & 3,3\,\%  & 84\,208 \\
-soc-LiveJournal1 & 7,4\,\%  & 45,2\,\% & 36,7\,\% & 10,7\,\% & 13\,906 \\
+wiki-Vote        & 66,5 & 3,0  & 0,5  & 12,9 & 14,8 & 17,6 & 84,8 & 457 \\
+web-Google       & 18,4 & 56,7 & 16,4 & 22,3 & 43,2 & 2,6  & 40,4 & 6\,326 \\
+web-BerkStan     & 9,9  & 64,2 & 11,5 & 22,6 & 21,5 & 3,3  & 67,0 & 84\,208 \\
+soc-LiveJournal1 & 7,4  & 45,2 & 6,2  & 36,7 & 33,8 & 10,7 & 60,0 & 13\,906 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -987,8 +994,9 @@ La prima ragione sta nella forma delle righe: \texttt{web-Google} possiede più
 nodi e meno archi rispetto a \texttt{web-BerkStan}, quindi righe molto più
 corte, e il costo fisso di ogni riga si ammortizza su meno archi.
 Inoltre, in \texttt{web-BerkStan} il lavoro si concentra nelle righe lunghe:
-il $3{,}3\,\%$ delle righe raccoglie il $67\,\%$ degli archi, contro il
-$40\,\%$ di \texttt{web-Google}. Dentro una riga gli indici dei predecessori
+quelle con più di 32 predecessori sono il $3{,}3\,\%$ ma raccolgono il
+$67\,\%$ degli archi, contro il $40\,\%$ di \texttt{web-Google}
+(Tabella~\ref{tab:bins}). Dentro una riga gli indici dei predecessori
 sono crescenti e ravvicinati, cosicché una linea di cache da 64~byte serve
 in media tre contributi, mentre in \texttt{web-Google} quasi ogni arco ne
 richiede una propria: $22$~byte di \texttt{contrib} per arco contro $64$, un
