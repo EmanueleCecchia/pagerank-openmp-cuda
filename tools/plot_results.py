@@ -94,13 +94,6 @@ def main():
     ax2.set_yticklabels(["0", "25%", "50%", "75%", "100%"])
     ax2.set_title("(b) Efficienza", fontsize=9.5, pad=6)
 
-    # la regressione 4 -> 8 thread e' il risultato principale: va segnalata
-    ax1.annotate("a 8 thread due grafi\nsu tre rallentano",
-                 xy=(8, 2.61), xytext=(3.4, 0.75), fontsize=7.2, color=INK2,
-                 ha="left",
-                 arrowprops=dict(arrowstyle="->", color=INK2, linewidth=0.8,
-                                 connectionstyle="arc3,rad=0.3"))
-
     maniglie, etichette = ax1.get_legend_handles_labels()
     fig.legend(maniglie, etichette, loc="lower center", ncol=3,
                frameon=False, fontsize=8, bbox_to_anchor=(0.5, -0.02))
