@@ -979,6 +979,22 @@ costituisce la motivazione quantitativa per il passaggio alla GPU --- il cui
 vantaggio non è tanto il maggior numero di core quanto la banda di memoria
 sensibilmente superiore.
 
+\paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
+I due grafi hanno taglia paragonabile ma tempi molto diversi.
+A 4 thread \texttt{web-Google} impiega $0{,}459$~s contro $0{,}254$~s, l'$81\,\%$
+in più.
+La prima ragione sta nella forma delle righe: \texttt{web-Google} possiede più
+nodi e meno archi rispetto a \texttt{web-BerkStan}, quindi righe molto più
+corte, e il costo fisso di ogni riga si ammortizza su meno archi.
+Inoltre, in \texttt{web-BerkStan} il lavoro si concentra nelle righe lunghe:
+il $3{,}3\,\%$ delle righe raccoglie il $67\,\%$ degli archi, contro il
+$40\,\%$ di \texttt{web-Google}. Dentro una riga gli indici dei predecessori
+sono crescenti e ravvicinati, cosicché una linea di cache da 64~byte serve
+in media tre contributi, mentre in \texttt{web-Google} quasi ogni arco ne
+richiede una propria: $22$~byte di \texttt{contrib} per arco contro $64$, un
+rapporto di $2{,}9$ vicino al $2{,}8$ fra i tempi per arco dei due grafi.
+
+
 \paragraph{Nota sull'istanza più piccola.}
 I tempi di \texttt{wiki-Vote} non sono riportati in
 Tabella~\ref{tab:scaling}: con durate dell'ordine del millesimo di secondo
