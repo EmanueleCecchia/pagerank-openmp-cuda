@@ -988,7 +988,7 @@ in più, e non è una questione di iterazioni perché ne esegue di meno (62 cont
 Non è nemmeno una questione di lavoro
 svolto, perché \texttt{web-BerkStan} ha il $49\,\%$ di archi in più: a parità di
 arco \texttt{web-Google} costa $1{,}45$~ns 
-\footnote{0,458 s  /  62 iterazioni = 0,0074; 0,0074 s  /  5105039 archi = 1,45 ns per arco.} 
+\footnote{0,459 s  /  62 iterazioni = 0,0074; 0,0074 s  /  5105039 archi = 1,45 ns per arco.} 
 contro $0{,}52$ di \texttt{web-BerkStan}, quasi il triplo.
 
 \stacco
@@ -997,8 +997,7 @@ estremi in \texttt{row\_ptr}, scrivere il rank nuovo e aggiornare l'errore),
 e \texttt{web-Google} ha il $28\,\%$ di nodi
 in più. Quel $28\,\%$ è però un tetto di miglioramento ideale:
 lo si raggiungerebbe solo se gli archi
-fossero gratis, mentre il divario osservato è l'$86\,\%$\footnote{L'$81\,\%$
-aggiustato per il numero di iterazioni.}.
+fossero gratis, mentre il divario osservato è l'$81\,\%$.
 Non lo spiega neppure la concentrazione nelle righe lunghe:
 \texttt{soc-LiveJournal1} ha le righe più lunghe dei tre e il $60\,\%$ degli
 archi oltre i 32 predecessori, quasi quanto il $67\,\%$ di
