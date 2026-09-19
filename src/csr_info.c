@@ -17,8 +17,10 @@ int main(int argc, char **argv)
     uint64_t v, len;
     uint64_t dangling = 0, no_in = 0;
     uint64_t bin_thread = 0, bin_warp = 0, bin_block = 0;
+    uint64_t edges_thread = 0, edges_warp = 0, edges_block = 0;
     uint64_t max_in = 0, max_in_node = 0;
     uint32_t max_out = 0;
+    double   n_rows, n_edges;
 
     if (argc < 2 || argc > 3) {
         fprintf(stderr, "usage: %s <graph.csr> [graph.ids]\n", argv[0]);
@@ -40,7 +42,9 @@ int main(int argc, char **argv)
     /* One pass over the rows collects every figure we report.  The bins are
      * the row-length classes the CUDA kernel will use to pick a granularity:
      * one thread per short row, one warp per medium row, one block for the
-     * long tail of the power-law degree distribution. */
+     * long tail of the power-law degree distribution.  Each bin is counted
+     * in rows and in edges because the two diverge: the long rows are a
+     * per-cent of the rows and most of the work. */
     for (v = 0; v < g.n_nodes; v++) {
         len = g.row_ptr[v + 1] - g.row_ptr[v];
 
@@ -48,10 +52,13 @@ int main(int argc, char **argv)
             no_in++;
         } else if (len <= 4) {
             bin_thread++;
+            edges_thread += len;
         } else if (len <= 32) {
             bin_warp++;
+            edges_warp += len;
         } else {
             bin_block++;
+            edges_block += len;
         }
 
         if (len > max_in) {
@@ -72,13 +79,20 @@ int main(int argc, char **argv)
     printf("  dangling (outdeg 0)  %12" PRIu64 "\n", dangling);
     printf("  no in-edges          %12" PRIu64 "\n", no_in);
     printf("  max in / out degree  %12" PRIu64 " / %" PRIu32 "\n", max_in, max_out);
+    /* n_edges can be 0; n_nodes cannot, csr_load() rejects it. */
+    n_rows  = (double)g.n_nodes;
+    n_edges = g.n_edges > 0 ? (double)g.n_edges : 1.0;
+
     printf("  row length distribution (in-neighbours per row):\n");
-    printf("    1-4  (thread/row) %12" PRIu64 "  (%5.1f%% of rows)\n",
-           bin_thread, 100.0 * (double)bin_thread / (double)g.n_nodes);
-    printf("    5-32 (warp/row)   %12" PRIu64 "  (%5.1f%% of rows)\n",
-           bin_warp, 100.0 * (double)bin_warp / (double)g.n_nodes);
-    printf("    >32  (block/row)  %12" PRIu64 "  (%5.1f%% of rows)\n",
-           bin_block, 100.0 * (double)bin_block / (double)g.n_nodes);
+    printf("    1-4  (thread/row) %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
+           bin_thread, 100.0 * (double)bin_thread / n_rows,
+           100.0 * (double)edges_thread / n_edges);
+    printf("    5-32 (warp/row)   %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
+           bin_warp, 100.0 * (double)bin_warp / n_rows,
+           100.0 * (double)edges_warp / n_edges);
+    printf("    >32  (block/row)  %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
+           bin_block, 100.0 * (double)bin_block / n_rows,
+           100.0 * (double)edges_block / n_edges);
 
     if (ids != NULL) {
         printf("  busiest node         index %" PRIu64 ", SNAP id %" PRIu64

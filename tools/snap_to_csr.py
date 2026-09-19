@@ -124,9 +124,11 @@ def report(stats):
     print("  row length distribution (in-neighbours per row):")
     in_deg = stats["in_deg"]
     for low, high, label in BINS:
-        count = np.count_nonzero((in_deg >= low) & (in_deg <= (high if high else in_deg.max())))
-        share = 100.0 * count / stats["nodes"]
-        print(f"    {label} {count:>12,}  ({share:5.1f}% of rows)")
+        rows = (in_deg >= low) & (in_deg <= (high if high else in_deg.max()))
+        count = int(np.count_nonzero(rows))
+        edges = int(in_deg[rows].sum())
+        print(f"    {label} {count:>12,}  ({100.0 * count / stats['nodes']:5.1f}% of rows,"
+              f" {100.0 * edges / max(stats['edges'], 1):5.1f}% of edges)")
 
 
 def main(argv=None):
