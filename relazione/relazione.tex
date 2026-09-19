@@ -916,7 +916,7 @@ e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
 
 \subsection{Scalabilità della versione OpenMP}
 \label{sec:scalabilita}
-Ogni configurazione è stata eseguita tre volte; si riporta il \emph{minimo},
+Ogni configurazione è stata eseguita tre volte; si riporta il minimo,
 visto che l'attività di sistema può rallentare un'esecuzione.
 
 \begin{table}[h]
@@ -939,7 +939,7 @@ soc-LiveJournal1 & 11,863 & 12,442 & 7,457 & 5,088 & 5,014 & 3,608 & $2{,}37\tim
 \centering
 \includegraphics[width=\linewidth]{figure/scalabilita.pdf}
 \caption{Scalabilità della versione OpenMP. Il riferimento per lo speed-up è
-la build sequenziale vera, compilata senza \texttt{-fopenmp}. La linea
+la build sequenziale, compilata senza \texttt{-fopenmp}. La linea
 tratteggiata in (a) indica lo speed-up lineare ideale; in (b) l'efficienza
 del 100\,\%. Su \texttt{web-Google} e \texttt{web-BerkStan} il passaggio da
 4 a 8 thread \emph{peggiora} il tempo di esecuzione. Figura generata da
