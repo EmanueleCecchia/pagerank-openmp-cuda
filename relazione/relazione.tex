@@ -961,13 +961,12 @@ da \texttt{results/bench.csv}.}
 La Figura~\ref{fig:scalabilita} mostra che
 le tre curve si allontanano dall'andamento lineare già a 2 thread e si
 appiattiscono fra 4 e 8, con una vera e propria inversione su due grafi su
-tre. L'efficienza si aggira sull'80--90\,\% a 2 thread, sul 60--70\,\% a 4 e
-sul 30\,\% a 8: i thread aggiuntivi non trovano banda di memoria
-disponibile.
+tre. L'efficienza si aggira sull'80--90\,\% a 2 thread,
+sul 60--70\,\% a 4 e sul 30\,\% a 8.
 
-\paragraph{Osservazione principale: il calcolo è memory-bound.}
-Su due grafi su tre l'esecuzione con 8 thread è \emph{più lenta} di quella
-con 4. Il processore possiede 4 core fisici presentati come 8 thread
+\paragraph{Il calcolo è memory-bound.}
+\texttt{web-Google} e \texttt{web-BerkStan} sono più veloci a 4 thread che a 8, 
+mentre \texttt{soc-LiveJournal1} resta sostanzialmente stabile. Il processore possiede 4 core fisici presentati come 8 thread
 logici; i due thread che condividono un core condividono anche la via di
 accesso alla memoria. Poiché il ciclo interno passa la maggior parte del
 tempo in attesa di letture sparse su \texttt{contrib}, i thread aggiuntivi
