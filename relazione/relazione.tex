@@ -919,6 +919,17 @@ e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
 Ogni configurazione è stata eseguita tre volte; si riporta il minimo,
 visto che l'attività di sistema può rallentare un'esecuzione.
 
+\stacco
+Con $p$ thread, lo speed-up e l'efficienza parallela sono definiti come
+\begin{equation}
+S(p) = \frac{T_{\mathrm{seq}}}{T(p)},
+\qquad
+E(p) = \frac{S(p)}{p},
+\label{eq:speedup}
+\end{equation}
+dove $T_{\mathrm{seq}}$ è il tempo della build sequenziale (compilata senza
+\texttt{-fopenmp}) e $T(p)$ quello della build OpenMP a $p$ thread.
+
 \begin{table}[h]
 \centering
 \caption{Tempi di esecuzione in secondi.}
