@@ -950,19 +950,19 @@ soc-LiveJournal1 & 11,863 & 12,442 & 7,457 & 5,088 & 5,014 & 3,608 & $2{,}37\tim
 \centering
 \includegraphics[width=\linewidth]{figure/scalabilita.pdf}
 \caption{Scalabilità della versione OpenMP. Il riferimento per lo speed-up è
-la build sequenziale, compilata senza \texttt{-fopenmp}. La linea
-tratteggiata in (a) indica lo speed-up lineare ideale; in (b) l'efficienza
-del 100\,\%. Su \texttt{web-Google} e \texttt{web-BerkStan} il passaggio da
-4 a 8 thread \emph{peggiora} il tempo di esecuzione. Figura generata da
-\texttt{tools/plot\_results.py} a partire da \texttt{results/bench.csv}.}
+la build sequenziale. La linea
+tratteggiata in (a) indica lo speed-up lineare ideale $S(p) = p$; in (b)
+l'efficienza del 100\,\%. Figura generata da \texttt{tools/plot\_results.py} a partire
+da \texttt{results/bench.csv}.}
 \label{fig:scalabilita}
 \end{figure}
 
-La Figura~\ref{fig:scalabilita} rende visibile il fenomeno descritto sopra:
+\stacco
+La Figura~\ref{fig:scalabilita} mostra che
 le tre curve si allontanano dall'andamento lineare già a 2 thread e si
 appiattiscono fra 4 e 8, con una vera e propria inversione su due grafi su
-tre. L'efficienza scende dall'80--90\,\% a 2 thread al 58--72\,\% a 4, fino a
-circa il 30\,\% a 8: i thread aggiuntivi non trovano banda di memoria
+tre. L'efficienza si aggira sull'80--90\,\% a 2 thread, sul 60--70\,\% a 4 e
+sul 30\,\% a 8: i thread aggiuntivi non trovano banda di memoria
 disponibile.
 
 \paragraph{Osservazione principale: il calcolo è memory-bound.}
@@ -973,7 +973,7 @@ accesso alla memoria. Poiché il ciclo interno passa la maggior parte del
 tempo in attesa di letture sparse su \texttt{contrib}, i thread aggiuntivi
 producono contesa anziché capacità di calcolo.
 
-L'efficienza parallela su 4 core è del 58--72\,\%. Questo risultato è il
+L'efficienza parallela su 4 core è del 60--70\,\% circa. Questo risultato è il
 dato più importante dell'analisi: identifica il collo di bottiglia nella
 \emph{larghezza di banda della memoria}, non nella potenza di calcolo, e
 costituisce la motivazione quantitativa per il passaggio alla GPU --- il cui
