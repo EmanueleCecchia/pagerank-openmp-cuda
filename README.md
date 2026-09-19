@@ -159,7 +159,7 @@ Use `--c-executable build/pagerank_omp` to check the parallel build instead.
 ## Project structure
 
 - `src/` — C sources (`csr.*` loader, `pagerank.*` kernel, `main.c` driver)
-- `tools/` — Python helpers (dataset conversion, verification, plots, benchmarks)
+- `tools/` — Python helpers (dataset conversion, verification, plots, benchmarks, locality stats)
 - `relazione/` — the report (LaTeX source and compiled PDF)
 - `results/` — `bench.csv` with every run; rank vectors are gitignored
 - `data/` — downloaded datasets (gitignored)
