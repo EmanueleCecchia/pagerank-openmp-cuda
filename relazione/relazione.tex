@@ -274,10 +274,11 @@ necessario distribuire il calcolo su più unità di elaborazione.
 % =====================================================================
 
 \subsection{Struttura del codice}
-Il progetto si compone di sette moduli, dei quali due soli formano la parte
-misurata: \texttt{src/pagerank.c}, che contiene il nucleo di calcolo, e
-\texttt{src/csr.c}, che porta il grafo in memoria. Gli altri preparano i dati,
-guidano l'esecuzione o servono a controllare i risultati.
+Il progetto si compone di nove moduli, dei quali due soli formano il
+programma di calcolo vero e proprio: \texttt{src/pagerank.c}, che contiene il
+nucleo cronometrato, e \texttt{src/csr.c}, che porta il grafo in memoria prima
+che il cronometro parta. Gli altri preparano i dati, guidano l'esecuzione o
+servono a controllare i risultati.
 \begin{center}
 \begin{tabular}{@{}ll@{}}
 \toprule
@@ -290,6 +291,8 @@ guidano l'esecuzione o servono a controllare i risultati.
 \texttt{src/csr\_info.c}              & statistiche di un grafo convertito \\
 \texttt{tools/verify\_pagerank.py}    & verifica indipendente \\
 \texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
+\texttt{tools/plot\_results.py}       & figure di scalabilità \\
+\texttt{tools/locality\_stats.py}     & statistiche di località del gather \\
 \bottomrule
 \end{tabular}
 \end{center}
