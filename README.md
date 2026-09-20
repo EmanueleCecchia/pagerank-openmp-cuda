@@ -1,50 +1,23 @@
 # PageRank on Hybrid Architectures (OpenMP + CUDA)
 
-Implementation and profiling of the PageRank algorithm across three
-versions: a sequential baseline, a pure-OpenMP (CPU-only) implementation,
-and a hybrid OpenMP+CUDA implementation that splits work between host and
-device. The sequential and OpenMP versions are built from the same source
-and differ only in compiler flags, so the baseline every speedup is
-measured against cannot drift from the parallel code.
+PageRank over large sparse graphs, in three versions built from one set of
+sources: a sequential baseline, a pure-OpenMP one, and a hybrid OpenMP+CUDA
+one (in development).
 
-## Datasets
+This file is the usage guide: how to build, get the data, run, check the
+results and reproduce the experiments. The problem, the design choices and
+the measurements are in [`relazione/relazione.pdf`](relazione/relazione.pdf)
+(in Italian).
 
-Real-world graphs from the [SNAP](https://snap.stanford.edu/data/) collection,
-used in increasing order of size. Each is a plain-text directed edge list
-(`FromNodeId<TAB>ToNodeId`) stored under `data/snap/` (gitignored — not
-committed to the repo).
+## Requirements
 
-| Dataset | Nodes | Edges | Source |
-|---|---|---|---|
-| wiki-Vote | 7,115 | 103,689 | https://snap.stanford.edu/data/wiki-Vote.html |
-| web-Google | 875,713 | 5,105,039 | https://snap.stanford.edu/data/web-Google.html |
-| web-BerkStan | 685,230 | 7,600,595 | https://snap.stanford.edu/data/web-BerkStan.html |
-| soc-LiveJournal1 | 4,847,571 | 68,993,773 | https://snap.stanford.edu/data/soc-LiveJournal1.html |
-
-To download:
-
-```bash
-mkdir -p data/snap && cd data/snap
-for g in wiki-Vote web-Google web-BerkStan soc-LiveJournal1; do
-    curl -O https://snap.stanford.edu/data/$g.txt.gz && gunzip $g.txt.gz
-done
-```
-
-## Preparing the data
-
-PageRank pulls rank along *incoming* edges, so the graphs are converted once
-into a binary CSR holding the transpose (row `v` = in-neighbours of `v`) plus
-the out-degrees. Converting up front keeps text parsing out of the timed
-region.
-
-```bash
-python3 tools/snap_to_csr.py data/snap/wiki-Vote.txt
-```
-
-This writes `wiki-Vote.csr` (the graph) and `wiki-Vote.ids` (the original SNAP
-id of each remapped node, used only for reporting). Requires numpy. The
-converter holds the whole edge list in memory at roughly 100 bytes per edge —
-soc-LiveJournal1 peaks near 6.7 GB.
+| For | Needs |
+|---|---|
+| building | `gcc` with OpenMP support, `make` |
+| dataset conversion | Python 3, `numpy` |
+| correctness check | `networkx`, `scipy` |
+| figures | `matplotlib` |
+| hybrid version | CUDA Toolkit |
 
 ## Building
 
@@ -54,17 +27,53 @@ make
 
 Produces four executables in `build/`, all from the same sources:
 
-| Executable | Build | Purpose |
+| Executable | Compiled with | Purpose |
 |---|---|---|
-| `pagerank_seq` | no `-fopenmp` | sequential baseline |
+| `pagerank_seq` | — | sequential baseline (OpenMP pragmas ignored) |
 | `pagerank_omp` | `-fopenmp` | parallel, double precision |
 | `pagerank_omp_float` | `-fopenmp -DPAGERANK_FLOAT` | parallel, single precision |
-| `csr_info` | — | prints a converted graph's statistics |
+| `csr_info` | — | statistics of a converted graph |
 
-`pagerank.c` carries the OpenMP pragmas; compiled without `-fopenmp` the
-compiler ignores them and emits ordinary serial loops. The sequential baseline
-is therefore the same code, not a separate implementation, and it avoids the
-thread-management overhead that `OMP_NUM_THREADS=1` would still pay.
+`make clean` removes `build/`.
+
+## Datasets
+
+Directed edge lists from the [SNAP](https://snap.stanford.edu/data/)
+collection, expected under `data/snap/` and not committed to the repo:
+[wiki-Vote](https://snap.stanford.edu/data/wiki-Vote.html),
+[web-Google](https://snap.stanford.edu/data/web-Google.html),
+[web-BerkStan](https://snap.stanford.edu/data/web-BerkStan.html),
+[soc-LiveJournal1](https://snap.stanford.edu/data/soc-LiveJournal1.html).
+
+```bash
+mkdir -p data/snap && cd data/snap
+for g in wiki-Vote web-Google web-BerkStan soc-LiveJournal1; do
+    curl -O https://snap.stanford.edu/data/$g.txt.gz && gunzip $g.txt.gz
+done
+cd ../..
+```
+
+### Converting to CSR
+
+The executables read a binary CSR file, produced once per graph:
+
+```bash
+python3 tools/snap_to_csr.py data/snap/web-Google.txt
+```
+
+This writes `web-Google.csr` (the graph) and `web-Google.ids` (the original
+SNAP id of each remapped node, used only for reporting). Options: `-o PATH`
+to choose the output path, `--drop-self-loops` to discard `u -> u` edges.
+
+The converter holds the whole edge list in memory at roughly 100 bytes per
+edge, so soc-LiveJournal1 peaks near 6.7 GB.
+
+To look inside a converted graph — node and edge counts, dangling nodes,
+degree extremes, row-length distribution:
+
+```bash
+./build/csr_info data/snap/web-Google.csr data/snap/web-Google.ids
+```
 
 ## Running
 
@@ -72,39 +81,66 @@ thread-management overhead that `OMP_NUM_THREADS=1` would still pay.
 ./build/pagerank_omp data/snap/web-Google.csr -i data/snap/web-Google.ids
 ```
 
-Options: `-d` damping (default 0.85), `-t` L1 tolerance (default 1e-6),
-`-n` maximum iterations (default 100), `-k` how many top nodes to print,
-`-i` the `.ids` file. Thread count comes from `OMP_NUM_THREADS`.
+| Option | Meaning | Default |
+|---|---|---|
+| `-i FILE` | companion `.ids` file, to report original SNAP ids | — |
+| `-d VAL` | damping factor | 0.85 |
+| `-t VAL` | L1 convergence tolerance | 1e-6 |
+| `-n NUM` | maximum iterations | 100 |
+| `-k NUM` | how many top nodes to print | 10 |
+| `-o FILE` | write every rank to FILE | — |
+| `-c FILE` | append one CSV row of run details to FILE | — |
 
-### Saving results
-
-`-o FILE` writes every rank, one node per line, after a header recording how
-the run was produced (build, precision, threads, iterations, timing, rank sum):
+The thread count comes from `OMP_NUM_THREADS`:
 
 ```bash
-./build/pagerank_omp data/snap/web-Google.csr -i data/snap/web-Google.ids -o ranks.txt
+OMP_NUM_THREADS=4 ./build/pagerank_omp data/snap/web-Google.csr
 ```
 
-Ranks are written in node order, not sorted by rank, so that two files line up
-line-by-line and can be compared directly — sorting would order near-ties
-differently between implementations and make a diff meaningless. To view them
-by rank instead: `grep -v '^#' ranks.txt | sort -k2 -g -r | head`.
+### Saving the results
 
-Values carry enough digits to round-trip exactly, which is what makes it
-possible to check one implementation against another across the whole vector
-rather than just the top few. Comparing the OpenMP build against the
-sequential one on web-Google gives a maximum relative difference of 2e-14
-(floating-point summation order), and the float build 2e-7 (float's machine
-epsilon).
+`-o FILE` writes every rank, one node per line, after a header recording how
+the run was produced (build, precision, threads, iterations, timing, rank
+sum). Ranks are written in node order rather than sorted by rank, so that two
+files line up line-by-line and can be diffed directly; values carry enough
+digits to round-trip exactly. To view them by rank instead:
 
-`-c FILE` appends one CSV row per run instead, so a sweep builds its own
-results table:
+```bash
+grep -v '^#' ranks.txt | sort -k2 -g -r | head
+```
+
+`-c FILE` appends one row per run to a CSV — graph, nodes, edges, build,
+precision, threads, damping, tolerance, iterations, converged, seconds total,
+seconds per iteration, rank sum — writing the header only when the file is
+created, so a sweep builds its own results table:
 
 ```bash
 for t in 1 2 4 8; do
     OMP_NUM_THREADS=$t ./build/pagerank_omp data/snap/web-Google.csr -c bench.csv
 done
 ```
+
+## Verifying correctness
+
+```bash
+python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
+python3 tools/verify_pagerank.py data/snap/web-Google.txt --no-dense
+```
+
+Recomputes PageRank by routes sharing no code with the project and compares
+them against the C executable; exits non-zero on any mismatch, so it works as
+a regression test. `--no-dense` skips the dense N×N reference, which only fits
+in memory for the smallest graph, and checks against networkx alone: that is
+the form to use on the larger graphs.
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--c-executable PATH` | which build of the C code to check | `build/pagerank_seq` |
+| `--csr PATH`, `--ids PATH` | companion files | edge list with the suffix replaced |
+| `-d`, `-t`, `-n` | damping, L1 tolerance, maximum iterations | 0.85, 1e-12, 500 |
+| `-k NUM` | how many top ranks to compare by order | 100 |
+| `--value-tolerance VAL` | allowed difference per rank | 1e-8 |
+| `--max-nodes NUM` | refuse the dense reference above this size | 15000 |
 
 ## Reproducing the experiments
 
@@ -115,52 +151,37 @@ tools/run_benchmarks.sh
 Runs every graph against the sequential, OpenMP (1/2/4/8 threads) and float
 builds, three repetitions each, and writes:
 
-- `results/bench.csv` — one row per run; take the minimum per configuration,
-  since the fastest run is the one least disturbed by other activity
-- `results/<graph>.ranks.txt` — the ranks themselves (gitignored: the
-  soc-LiveJournal1 vector alone is ~150 MB)
+- `results/bench.csv` — one row per run; the tables in the report take the
+  minimum per configuration;
+- `results/<graph>.ranks.txt` — the rank vectors (gitignored: the
+  soc-LiveJournal1 one alone is ~150 MB).
 
-Settings can be overridden from the environment, e.g.
-`GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh`.
-
-## Verifying correctness
+Settings can be overridden from the environment — `GRAPHS`, `THREADS`,
+`REPS`, `DATA`, `OUT`:
 
 ```bash
-python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
+GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
 ```
 
-Recomputes PageRank by routes sharing no code with the project, then compares
-against the C executable. Three checks:
+The two analysis tools read what the sweep produced:
 
-- a **dense N×N** reference — no CSR, no gather loop, so a bug in the sparse
-  representation cannot hide;
-- **networkx**, a third-party implementation, against that dense reference:
-  the dense code is independent in method but shares an author with the code
-  it checks, so this rules out the same misreading of the algorithm appearing
-  in both;
-- the C executable itself — that it **converged** rather than hitting the
-  iteration limit, that the top-k ranking and values match, and that the ranks
-  sum to 1 (which fails if dangling-node mass is mishandled).
+```bash
+python3 tools/plot_results.py
+python3 tools/locality_stats.py data/snap/*.csr
+```
 
-Exits non-zero on any mismatch, so it works as a regression test. The
-convergence check matters: a run stopped at the iteration limit can still
-produce the right *ordering* while its values are far from settled.
-
-The networkx check needs `networkx` and `scipy` (networkx 3.x routes
-`pagerank()` through scipy).
-
-The dense matrix costs N² × 8 bytes, so this only works on the smallest graph:
-wiki-Vote needs ~390 MiB, web-Google would need ~5.6 TiB. That is why
-wiki-Vote is in the ladder — not for performance, but as the one graph where a
-brute-force answer is computable at all.
-
-Use `--c-executable build/pagerank_omp` to check the parallel build instead.
+`plot_results.py` turns `results/bench.csv` into the speed-up and efficiency
+figures, written to `relazione/figure/scalabilita.pdf` and `.png`.
+`locality_stats.py` reports, per graph, the median index gap inside a row and
+the cache lines the gather touches per edge.
 
 ## Project structure
 
-- `src/` — C sources (`csr.*` loader, `pagerank.*` kernel, `main.c` driver)
-- `tools/` — Python helpers (dataset conversion, verification, plots, benchmarks, locality stats)
-- `relazione/` — the report (LaTeX source and compiled PDF)
-- `results/` — `bench.csv` with every run; rank vectors are gitignored
-- `data/` — downloaded datasets (gitignored)
-- `build/` — compiled executables (gitignored)
+- `src/` — C sources: `csr.*` (loader and validation), `pagerank.*` (the
+  timed kernel), `main.c` (driver), `csr_info.c` (graph statistics)
+- `tools/` — Python and shell helpers: conversion, verification, benchmark
+  sweep, figures, locality statistics
+- `relazione/` — the report, LaTeX source and compiled PDF
+- `results/` — `bench.csv` with every run; the rank vectors are gitignored
+- `data/` — the datasets (gitignored)
+- `build/` — the executables (gitignored)

@@ -1157,73 +1157,13 @@ sovrapposizione fra trasferimenti e calcolo.}
 \daFare{Aggiungere la valutazione personale complessiva una volta
 completata la fase CUDA.}
 
-% =====================================================================
-\section{Guida all'uso e riproducibilità}
-% =====================================================================
-
-\subsection{Requisiti}
-\texttt{gcc} con supporto OpenMP; CUDA Toolkit per la versione ibrida;
-Python~3 con \texttt{numpy} per la conversione dei dataset,
-più \texttt{networkx} e \texttt{scipy} per la sola verifica di correttezza.
-
-\subsection{Compilazione}
-\begin{lstlisting}[language=bash,numbers=none]
-make
-\end{lstlisting}
-Produce quattro eseguibili in \texttt{build/}: \texttt{pagerank\_seq}
-(senza OpenMP), \texttt{pagerank\_omp}, \texttt{pagerank\_omp\_float} e
-\texttt{csr\_info}. Tutti derivano dagli stessi file sorgente.
-
-\subsection{Preparazione dei dati}
-\begin{lstlisting}[language=bash,numbers=none]
-mkdir -p data/snap && cd data/snap
-for g in wiki-Vote web-Google web-BerkStan soc-LiveJournal1; do
-    curl -O https://snap.stanford.edu/data/$g.txt.gz && gunzip $g.txt.gz
-done
-cd ../..
-python3 tools/snap_to_csr.py data/snap/web-Google.txt
-\end{lstlisting}
-
-\subsection{Esecuzione}
-\begin{lstlisting}[language=bash,numbers=none]
-./build/pagerank_omp data/snap/web-Google.csr -i data/snap/web-Google.ids
-\end{lstlisting}
-Opzioni: \texttt{-d} damping, \texttt{-t} tolleranza, \texttt{-n} iterazioni
-massime, \texttt{-k} quanti nodi stampare, \texttt{-o} salva tutti i rank,
-\texttt{-c} accoda una riga CSV con i dati dell'esecuzione. Il numero di
-thread si imposta con \texttt{OMP\_NUM\_THREADS}.
-
-\subsection{Verifica della correttezza}
-\begin{lstlisting}[language=bash,numbers=none]
-python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
-python3 tools/verify_pagerank.py data/snap/web-Google.txt --no-dense
-\end{lstlisting}
-Termina con stato diverso da zero in caso di discrepanza, e può quindi
-essere usato come test di regressione. La seconda forma salta il riferimento
-denso, che richiederebbe $N^2$ elementi, e confronta il programma con il solo
-NetworkX: è il modo di verificare i grafi troppo grandi per la prima.
-
-\subsection{Riproduzione degli esperimenti}
-\begin{lstlisting}[language=bash,numbers=none]
-tools/run_benchmarks.sh
-\end{lstlisting}
-Esegue ogni grafo con le varianti sequenziale, OpenMP (1/2/4/8 thread) e
-\texttt{float}, con tre ripetizioni, e scrive \texttt{results/bench.csv}
-(una riga per esecuzione) e i vettori dei rank completi. Le impostazioni
-sono sovrascrivibili da ambiente, ad esempio
-\texttt{GRAPHS="wiki-Vote" REPS=1 tools/run\_benchmarks.sh}.
-
-\subsection{Codice sorgente}
-Il codice completo, con la cronologia di sviluppo, è disponibile all'indirizzo
+\subsection{Codice sorgente e guida all'uso}
+La repository è disponibile all'indirizzo
 \begin{center}
 \url{https://github.com/EmanueleCecchia/pagerank-openmp-cuda}
 \end{center}
-Il repository contiene i sorgenti C, gli strumenti Python di conversione e
-verifica, lo script della campagna sperimentale e il file
-\texttt{results/bench.csv} con i dati grezzi di tutte le esecuzioni. I
-dataset e i vettori dei rank non sono versionati per ragioni di dimensione:
-i primi si riscaricano con i comandi della Sezione~5.3, i secondi si
-rigenerano con \texttt{tools/run\_benchmarks.sh}.
+Il \texttt{README.md} fa da guida all'uso e contiene le istruzioni 
+per riscaricare i dataset, che non sono versionati per ragioni di dimensione.
 
 % =====================================================================
 \begin{thebibliography}{9}
