@@ -1105,14 +1105,20 @@ sovrapposizione fra trasferimenti e calcolo.}
     formulazione \emph{pull}, con il grafo memorizzato trasposto, elimina
     alla radice le scritture concorrenti, e si trasferisce invariata alla
     versione CUDA.
-  \item \textbf{Riferimento sequenziale onesto.} Sequenziale e parallelo
-    provengono dallo stesso sorgente, il che rende impossibile una
-    divergenza fra le due versioni e non gonfia lo speed-up dichiarato.
+  \item \textbf{Il CSR è adattato al problema.} Il valore di un non nullo
+    dipende solo dalla colonna, non dal singolo arco: il formato generico
+    obbligherebbe a ripetere lo stesso $1/\mathrm{outdeg}(u)$ una volta per
+    arco uscente di $u$, mentre \texttt{out\_deg[N]} lo registra una volta
+    sola. E' un'informazione duplicata che non viene
+    scritta.
+  \item \textbf{Il vettore \texttt{contrib} riduce gli accessi sparsi.} Senza
+    di esso il ciclo di accumulo dovrebbe leggere, per ogni arco,
+    \texttt{cur[u]} e \texttt{out\_deg[u]}: due array distinti, quindi due
+    accessi imprevedibili invece di uno. Precalcolare il quoziente porta le
+    divisioni da $M$ a $N$, ma soprattutto lascia una lettura sola per arco.
   \item \textbf{Verifica indipendente e collaudata.} Tre implementazioni
     concordano, e lo strumento di verifica è stato validato con
     un'iniezione di guasto.
-  \item \textbf{Riproducibilità.} L'intera campagna sperimentale è
-    riproducibile con un solo comando.
 \end{itemize}
 
 \subsection{Punti deboli e limiti}
