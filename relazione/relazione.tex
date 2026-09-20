@@ -1019,19 +1019,19 @@ quasi sequenziale.
 In \texttt{web-Google} gli indici sono sparsi su tutto l'array, il salto mediano
 è di quasi $17\,000$ posizioni (Tabella~\ref{tab:localita}) e ogni arco pretende 
 un nuovo nodo, e quindi una linea nuova: 64 byte trasferiti per usarne solo 8.
-Su una iterazione fanno $308$~MiB di linee richieste
+Su una iterazione fanno $308$~MiB di linee di cache richieste
 contro $29$, mentre le letture sequenziali --- \texttt{col\_idx},
 \texttt{row\_ptr} e i vettori di rank (\texttt{nxt} e \texttt{cur}) --- sono anzi \emph{più} abbondanti sul
 grafo veloce \texttt{web-BerkStan} ($53$~MiB contro $50$).
 
 \stacco
-La cache attenua il divario senza annullarlo: \texttt{contrib} occupa
+Le linee richieste non costano tutte uguale: \texttt{contrib} occupa
 $6{,}7$~MiB su \texttt{web-Google} e $5{,}2$~MiB su \texttt{web-BerkStan},
-entrambi entro gli $8$~MiB di L3, quindi una parte degli accessi sparsi non
-arriva fino alla memoria. È proprio ciò che manca a \texttt{soc-LiveJournal1},
-i cui $37$~MiB di \texttt{contrib} in L3 non entrano: pur toccando la metà
-delle linee per arco di \texttt{web-Google} paga lo stesso prezzo, perché
-ognuna di quelle linee va cercata in memoria.
+abbastanza poco perché una parte degli accessi sparsi resti servita dalla
+cache invece di arrivare in memoria. È ciò che manca a \texttt{soc-LiveJournal1},
+i cui $37$~MiB di \texttt{contrib} in L3 non entrano: nonostante una località
+migliore di quella di \texttt{web-Google}, paga lo stesso tempo per arco,
+perché la gran parte delle linee che il gather richiede va cercata in memoria.
 
 \begin{table}[h]
 \centering
