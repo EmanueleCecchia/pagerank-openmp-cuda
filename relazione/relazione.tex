@@ -1075,21 +1075,18 @@ soc-LiveJournal1 & 3\,104   & 2\,173 MiB & 37,0 MiB & 1,45 \\
 \end{table}
 
 \subsection{Confronto fra le varianti \texttt{float} e \texttt{double}}
-La variante in singola precisione è più rapida del $32\,\%$ su
-\texttt{web-Google} ($0{,}347$~s contro $0{,}459$~s), a parità di numero di
-iterazioni e con ranking identico. Il guadagno è coerente con il
+La variante in singola precisione riduce il tempo del $33\,\%$ su
+\texttt{web-Google} ($0{,}347$~s contro $0{,}519$~s a pari numero di thread),
+del $21\,\%$ su \texttt{web-BerkStan} e del $28\,\%$ su
+\texttt{soc-LiveJournal1}, a parità di numero di iterazioni.
+Il guadagno è coerente con il
 dimezzamento dei byte trasferiti per ogni rank, ed è un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
 
-Sui valori le due varianti si discostano, in differenza relativa fra i vettori
-di rank, di $2{,}2\cdot10^{-7}$: è l'ordine di grandezza dell'epsilon di
-macchina della singola precisione ($1{,}19\cdot10^{-7}$), quindi non si perde
-nulla oltre al limite intrinseco del formato.
-
-Il limite della singola precisione si manifesta invece sulla soglia di
+Il limite della singola precisione si manifesta sulla soglia di
 convergenza: su \texttt{web-Google} l'errore $L_1$ non scende sotto
 $\approx 5\cdot10^{-9}$, per cui una tolleranza di $10^{-9}$ non viene mai
-raggiunta mentre la doppia precisione converge in 104 iterazioni. Alla
+raggiunta, mentre la doppia precisione la raggiunge in 104 iterazioni. Alla
 tolleranza utilizzata negli esperimenti ($10^{-6}$) entrambe convergono
 nello stesso numero di iterazioni.
 
