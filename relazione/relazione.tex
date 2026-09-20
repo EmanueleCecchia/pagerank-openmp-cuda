@@ -1136,16 +1136,13 @@ sovrapposizione fra trasferimenti e calcolo.}
 
 \subsection{Possibili miglioramenti}
 \begin{itemize}
-  \item \textbf{Gestione out-of-core.} Era prevista in fase di proposta una
-    logica di streaming per grafi eccedenti la memoria della GPU. Le misure
-    hanno mostrato che non è necessaria per le istanze considerate: il
-    grafo più grande occupa 318,7~MiB contro i 4~GiB disponibili, e servirebbe
-    un'istanza dell'ordine del miliardo di archi per superare la soglia.
+  \item \textbf{Gestione out-of-core.} Una
+    logica di streaming per grafi eccedenti la memoria della GPU, che
+    per le istanze considerate non è necessaria.
     Resta un possibile sviluppo futuro, subordinato però alla riscrittura
     del convertitore.
   \item \textbf{Granularità adattiva sulla GPU.} Le misure di
-    Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate da
-    alcun kernel.
+    Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate.
   \item \textbf{Reciproci del grado precalcolati.} Il ciclo dei contributi
     esegue $N$ divisioni per iterazione; un array \texttt{inv\_out\_deg[N]} con
     $1/\mathrm{outdeg}(u)$ calcolato una volta sola le ridurrebbe ad
