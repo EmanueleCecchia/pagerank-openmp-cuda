@@ -980,7 +980,7 @@ possiede 4 core fisici presentati come 8 thread logici; i due thread che
 stanno sullo stesso core condividono anche cache e unità di accesso alla memoria. 
 Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
 \texttt{contrib[col\_idx[j]]}, i thread aggiuntivi raddoppiano le richieste,
-non le unità che le servono. Il simultaneous multithreading (SMT) rende quando un thread calcola
+non le unità che le servono. Il \emph{simultaneous multithreading}  (SMT) rende quando un thread calcola
 mentre l'altro aspetta, ma qui aspettano entrambi.
 
 \paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
@@ -1006,19 +1006,23 @@ archi oltre i 32 predecessori, quasi quanto il $67\,\%$ di
 arco esattamente come \texttt{web-Google}.
 
 \stacco
-Quello che cambia è la \emph{località} della lettura sparsa
-(Tabella~\ref{tab:localita}). In \texttt{web-BerkStan} i predecessori di un
+La differenza sta in quanto distano un indice e il successivo,
+visto che il ciclo recupera i contributi dei predecessori \texttt{contrib[col\_idx[j]]} 
+in ordine sparso, perché i valori di \texttt{col\_idx} non sono sequenziali.
+In \texttt{web-BerkStan} i predecessori di un
 nodo hanno indici quasi consecutivi, infatti il salto mediano fra due indici della
 stessa riga è $1$, una conseguenza di come sono stati raccolti e salvati i dati:
-una sola linea di cache da 64 byte
-serve in media 16 archi e il gather si riduce a una lettura quasi sequenziale.
+una sola linea di cache da 64 byte porta con sé 8 contributi consecutivi,
+e ne bastano poche per servire un'intera riga, cosicché questa raccolta di
+valori da posizioni sparse --- il \emph{gather} --- si riduce a una lettura
+quasi sequenziale.
 In \texttt{web-Google} gli indici sono sparsi su tutto l'array, il salto mediano
-è di quasi $17\,000$ posizioni e ogni arco pretende una linea nuova, 64 byte
-trasferiti per usarne 8. Su una iterazione fanno $308$~MiB di linee richieste
+è di quasi $17\,000$ posizioni (Tabella~\ref{tab:localita}) e ogni arco pretende 
+un nuovo nodo, e quindi una linea nuova: 64 byte trasferiti per usarne solo 8.
+Su una iterazione fanno $308$~MiB di linee richieste
 contro $29$, mentre le letture sequenziali --- \texttt{col\_idx},
-\texttt{row\_ptr} e i vettori di rank --- sono anzi \emph{più} abbondanti sul
-grafo veloce ($53$~MiB contro $50$). L'unico termine che cambia verso è il
-gather.
+\texttt{row\_ptr} e i vettori di rank (\texttt{nxt} e \texttt{cur}) --- sono anzi \emph{più} abbondanti sul
+grafo veloce \texttt{web-BerkStan} ($53$~MiB contro $50$).
 
 \stacco
 La cache attenua il divario senza annullarlo: \texttt{contrib} occupa
@@ -1038,15 +1042,15 @@ schedulazione del ciclo, e il gather per iterazione è il volume che ne risulta.
 Misure prodotte da \texttt{tools/locality\_stats.py} dai file \texttt{.csr};
 i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling}.}
 \label{tab:localita}
-\begin{tabular}{@{}lrrrrr@{}}
+\begin{tabular}{@{}lrrrr@{}}
 \toprule
-\textbf{Grafo} & \textbf{salto} & \textbf{archi per} & \textbf{gather} &
+\textbf{Grafo} & \textbf{salto} & \textbf{gather} &
 \textbf{\texttt{contrib}} & \textbf{ns per} \\
- & \textbf{mediano} & \textbf{linea} & \textbf{per iter.} & & \textbf{arco} \\
+ & \textbf{mediano} & \textbf{per iter.} & & \textbf{arco} \\
 \midrule
-web-Google       & 16\,836 & 1,0  & 308 MiB    & 6,7 MiB  & 1,45 \\
-web-BerkStan     & 1       & 16,1 & 29 MiB     & 5,2 MiB  & 0,52 \\
-soc-LiveJournal1 & 3\,104  & 1,9  & 2\,173 MiB & 37,0 MiB & 1,45 \\
+web-Google       & 16\,836  & 308 MiB    & 6,7 MiB  & 1,45 \\
+web-BerkStan     & 1        & 29 MiB     & 5,2 MiB  & 0,52 \\
+soc-LiveJournal1 & 3\,104   & 2\,173 MiB & 37,0 MiB & 1,45 \\
 \bottomrule
 \end{tabular}
 \end{table}
