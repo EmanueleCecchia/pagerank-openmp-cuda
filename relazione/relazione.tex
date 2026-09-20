@@ -1018,11 +1018,12 @@ valori da posizioni sparse --- il \emph{gather} --- si riduce a una lettura
 quasi sequenziale.
 In \texttt{web-Google} gli indici sono sparsi su tutto l'array, il salto mediano
 è di quasi $17\,000$ posizioni (Tabella~\ref{tab:localita}) e ogni arco pretende 
-un nuovo nodo, e quindi una linea nuova: 64 byte trasferiti per usarne solo 8.
+un nuovo nodo, e quindi una linea di cache nuova: 64 byte trasferiti per usarne solo 8.
 Su una iterazione fanno $308$~MiB di linee di cache richieste
 contro $29$, mentre le letture sequenziali --- \texttt{col\_idx},
-\texttt{row\_ptr} e i vettori di rank (\texttt{nxt} e \texttt{cur}) --- sono anzi \emph{più} abbondanti sul
-grafo veloce \texttt{web-BerkStan} ($53$~MiB contro $50$).
+\texttt{row\_ptr} e i vettori di rank (\texttt{nxt} e \texttt{cur}) --- sono
+anzi più abbondanti sul grafo veloce \texttt{web-BerkStan} ($53$~MiB contro $50$).
+La Tabella~\ref{tab:riga-nodo1} mostra la riga del nodo~1 nei due grafi.
 
 \stacco
 Le linee richieste non costano tutte uguale: \texttt{contrib} occupa
