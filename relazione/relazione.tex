@@ -1143,21 +1143,12 @@ sovrapposizione fra trasferimenti e calcolo.}
     del convertitore.
   \item \textbf{Granularità adattiva sulla GPU.} Le misure di
     Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate.
-  \item \textbf{Reciproci del grado precalcolati.} Il ciclo dei contributi
-    esegue $N$ divisioni per iterazione; un array \texttt{inv\_out\_deg[N]} con
-    $1/\mathrm{outdeg}(u)$ calcolato una volta sola le ridurrebbe ad
-    altrettante moltiplicazioni. Su CPU il guadagno atteso è piccolo ---
-    quel ciclo tocca $N$ elementi contro gli $M$ del ciclo di accumulo, e il
-    calcolo è comunque \emph{memory-bound} --- e in doppia precisione
-    l'array costerebbe $8 \times N$ byte contro i $4 \times N$ di
-    \texttt{out\_deg}, raddoppiando il traffico proprio dove sta il collo di
-    bottiglia. Vale invece la pena provarlo sulla GPU e nella variante
-    \texttt{float}, dove il rapporto di costo fra divisione e moltiplicazione
-    è più sfavorevole e l'occupazione resta invariata. Da verificare l'effetto
-    sulla precisione: $x \cdot (1/d)$ introduce un arrotondamento in più
-    rispetto a $x/d$.
-  \item \textbf{Ricerca sui parametri di scheduling} (politica e dimensione
-    del blocco) e confronto con \texttt{guided}.
+  \item \textbf{Ricerca su politica di scheduling e dimensione del blocco.}
+    Il parametro non governa solo il bilanciamento del carico: blocchi più
+    ampi danno a un thread più righe consecutive, quindi più riuso delle
+    linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
+    dal grafo; varrebbe la pena cercarlo, confrontando anche politiche come
+    \texttt{guided}.
 \end{itemize}
 
 \daFare{Aggiungere la valutazione personale complessiva una volta
