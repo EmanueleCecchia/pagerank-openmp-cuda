@@ -1124,14 +1124,11 @@ sovrapposizione fra trasferimenti e calcolo.}
 \subsection{Punti deboli e limiti}
 \begin{itemize}
   \item \textbf{Il convertitore non scala oltre le istanze usate.} Il
-    convertitore Python mantiene l'intera edge list in memoria, con un costo
-    di circa 100 byte per arco misurato su \texttt{soc-LiveJournal1}.
-    Un'istanza da un miliardo di archi ne richiederebbe un centinaio di
-    gigabyte, e servirebbe un convertitore in C con ordinamento esterno.
+    convertitore Python mantiene l'intera edge list in memoria: se in futuro
+    si volessero trattare grafi sensibilmente più grandi, andrebbe ripensato.
   \item \textbf{Formato binario non standard.} Il formato \texttt{.csr} è
-    specifico del progetto: è velocissimo da caricare, ma non ispezionabile
-    con strumenti esterni. La scelta è stata fatta consapevolmente,
-    privilegiando l'assenza di parsing nel percorso misurato.
+    specifico del progetto: è velocissimo da caricare e tiene il programma C
+    libero da un parser, ma non è ispezionabile con strumenti esterni.
   \item \textbf{Dimensione della porzione dinamica non ottimizzata.} Il
     valore 256 di \texttt{schedule(dynamic, 256)} non è stato oggetto di
     una ricerca sistematica.
