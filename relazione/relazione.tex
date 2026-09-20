@@ -1074,20 +1074,6 @@ soc-LiveJournal1 & 3\,104   & 2\,173 MiB & 37,0 MiB & 1,45 \\
 \end{table}
 
 \stacco
-La spiegazione si può mettere alla prova. Permutando a caso le etichette dei
-nodi di \texttt{web-BerkStan} si ottiene un grafo isomorfo all'originale ---
-stesso numero di nodi e di archi, stessa lunghezza per ogni riga, stessa
-Tabella~\ref{tab:bins} --- in cui l'unica cosa distrutta è la vicinanza fra gli
-indici di una stessa riga. Il tempo cresce del $72\,\%$ a 1 thread, del
-$58\,\%$ a 4 e del $122\,\%$ a 8, dove i due thread per core già si contendono
-la memoria. La stessa permutazione applicata a \texttt{web-Google} non produce
-alcun effetto, fra il $-1$ e il $+3\,\%$: la sua numerazione era già sparsa e
-non c'è località da rompere. Il divario fra i due grafi è dunque una proprietà
-della numerazione dei nodi, non della forma delle righe. Le percentuali vengono
-da \texttt{tools/locality\_experiment.py} sulla stessa macchina, in una sessione
-di misura a sé: sono confrontabili fra loro, non con i tempi assoluti della
-Tabella~\ref{tab:scaling}.
-
 L'efficienza parallela su 4 core è del 60--70\,\% circa. Questo risultato è il
 dato più importante dell'analisi: identifica il collo di bottiglia nella
 \emph{larghezza di banda della memoria}, non nella potenza di calcolo, e
@@ -1188,10 +1174,6 @@ sovrapposizione fra trasferimenti e calcolo.}
     è più sfavorevole e l'occupazione resta invariata. Da verificare l'effetto
     sulla precisione: $x \cdot (1/d)$ introduce un arrotondamento in più
     rispetto a $x/d$.
-  \item \textbf{Rinumerazione dei nodi.} Riordinare i nodi di \texttt{web-Google}, 
-    per avvicinarsi al comportamento di \texttt{web-BerkStan}, il quale possiede una 
-    proprietà che dipende da come è stato raccolto e non per merito del
-    formato.
   \item \textbf{Ricerca sui parametri di scheduling} (politica e dimensione
     del blocco) e confronto con \texttt{guided}.
 \end{itemize}
