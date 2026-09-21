@@ -92,7 +92,8 @@ degree extremes, row-length distribution:
 | `-o path/ranks.txt` | write every rank to that file | — |
 | `-c path/bench.csv` | append one CSV row of run details to that file | — |
 
-The thread count comes from `OMP_NUM_THREADS`:
+The thread count comes from `OMP_NUM_THREADS`.
+Left unset, the run uses every available logical thread; set it to pick a specific number:
 
 ```bash
 OMP_NUM_THREADS=4 ./build/pagerank_omp data/snap/web-Google.csr
