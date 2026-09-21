@@ -1,0 +1,27 @@
+# Conda environment for the Python helpers in tools/.
+#
+#   conda env create -f environment.yml
+#   conda activate pagerank
+#
+# The C toolchain is deliberately left out: the build and every timing in the
+# report come from the system gcc and the system CUDA Toolkit, so pulling a
+# different compiler in here would silently change the very numbers the report
+# is about.  Only the tools that prepare and check the results live in this
+# environment, pinned to a minor version so the checks and the figures of the
+# report reproduce.
+name: pagerank
+
+channels:
+  - conda-forge
+
+dependencies:
+  # The build string keeps conda off the free-threaded (no-GIL) 3.14, which
+  # it otherwise picks about as readily: an experimental interpreter is not
+  # what the measurements in the report were taken on.
+  - python=3.14.*=*_cp314
+  - numpy=2.5       # tools/: CSR conversion, locality statistics, verification
+  - networkx=3.6    # verify_pagerank.py: the third-party cross-check
+  - scipy=1.18      # networkx 3.x routes pagerank() through scipy
+  # plot_results.py forces the Agg backend, so matplotlib-base is enough:
+  # it draws to file without dragging in the Qt stack of the full package.
+  - matplotlib-base=3.11
