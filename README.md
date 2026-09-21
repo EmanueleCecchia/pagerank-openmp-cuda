@@ -62,8 +62,9 @@ python3 tools/snap_to_csr.py data/snap/web-Google.txt
 ```
 
 This writes `web-Google.csr` (the graph) and `web-Google.ids` (the original
-SNAP id of each remapped node, used only for reporting). Options: `-o PATH`
-to choose the output path, `--drop-self-loops` to discard `u -> u` edges.
+SNAP id of each remapped node, used only for reporting). Options:
+`-o path/graph.csr` to choose the output path, `--drop-self-loops` to discard
+`u -> u` edges.
 
 The converter holds the whole edge list in memory at roughly 100 bytes per
 edge, so soc-LiveJournal1 peaks near 6.7 GB.
@@ -83,13 +84,13 @@ degree extremes, row-length distribution:
 
 | Option | Meaning | Default |
 |---|---|---|
-| `-i FILE` | companion `.ids` file, to report original SNAP ids | — |
+| `-i path/graph.ids` | companion `.ids` file, to report original SNAP ids | — |
 | `-d VAL` | damping factor | 0.85 |
 | `-t VAL` | L1 convergence tolerance | 1e-6 |
 | `-n NUM` | maximum iterations | 100 |
 | `-k NUM` | how many top nodes to print | 10 |
-| `-o FILE` | write every rank to FILE | — |
-| `-c FILE` | append one CSV row of run details to FILE | — |
+| `-o path/ranks.txt` | write every rank to that file | — |
+| `-c path/runs.csv` | append one CSV row of run details to that file | — |
 
 The thread count comes from `OMP_NUM_THREADS`:
 
@@ -99,7 +100,7 @@ OMP_NUM_THREADS=4 ./build/pagerank_omp data/snap/web-Google.csr
 
 ### Saving the results
 
-`-o FILE` writes every rank, one node per line, after a header recording how
+`-o` writes every rank, one node per line, after a header recording how
 the run was produced (build, precision, threads, iterations, timing, rank
 sum). Ranks are written in node order rather than sorted by rank, so that two
 files line up line-by-line and can be diffed directly; values carry enough
@@ -109,7 +110,7 @@ digits to round-trip exactly. To view them by rank instead:
 grep -v '^#' ranks.txt | sort -k2 -g -r | head
 ```
 
-`-c FILE` appends one row per run to a CSV — graph, nodes, edges, build,
+`-c` appends one row per run to a CSV — graph, nodes, edges, build,
 precision, threads, damping, tolerance, iterations, converged, seconds total,
 seconds per iteration, rank sum — writing the header only when the file is
 created, so a sweep builds its own results table:
@@ -136,7 +137,7 @@ the form to use on the larger graphs.
 | Option | Meaning | Default |
 |---|---|---|
 | `--c-executable PATH` | which build of the C code to check | `build/pagerank_seq` |
-| `--csr PATH`, `--ids PATH` | companion files | edge list with the suffix replaced |
+| `--csr path/graph.csr`, `--ids path/graph.ids` | companion files | edge list with the suffix replaced |
 | `-d`, `-t`, `-n` | damping, L1 tolerance, maximum iterations | 0.85, 1e-12, 500 |
 | `-k NUM` | how many top ranks to compare by order | 100 |
 | `--value-tolerance VAL` | allowed difference per rank | 1e-8 |
