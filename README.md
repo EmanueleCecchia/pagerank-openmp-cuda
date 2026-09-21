@@ -153,10 +153,8 @@ tools/run_benchmarks.sh
 Runs every graph against the sequential, OpenMP (1/2/4/8 threads) and float
 builds, three repetitions each, and writes:
 
-- `results/bench.csv` — one row per run; the tables in the report take the
-  minimum per configuration;
-- `results/<graph>.ranks.txt` — the rank vectors (gitignored: the
-  soc-LiveJournal1 one alone is ~150 MB).
+- `results/bench.csv` — one row per run;
+- `results/<graph>.ranks.txt` — the rank vectors (gitignored).
 
 Settings can be overridden from the environment — `GRAPHS`, `THREADS`,
 `REPS`, `DATA`, `OUT`:
