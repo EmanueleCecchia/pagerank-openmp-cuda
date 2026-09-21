@@ -19,16 +19,12 @@ the measurements are in [`relazione/relazione.pdf`](relazione/relazione.pdf)
 | figures | `matplotlib` |
 | hybrid version | CUDA Toolkit |
 
-The Python side of that table is [`environment.yml`](environment.yml):
+To create the conda environment:
 
 ```bash
 conda env create -f environment.yml
 conda activate pagerank
 ```
-
-The compilers are deliberately not in it: the build and the timings reported
-come from the system `gcc` and the system CUDA Toolkit, and a compiler shipped
-alongside the Python packages would quietly change them.
 
 ## Building
 
