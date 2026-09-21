@@ -90,7 +90,7 @@ degree extremes, row-length distribution:
 | `-n NUM` | maximum iterations | 100 |
 | `-k NUM` | how many top nodes to print | 10 |
 | `-o path/ranks.txt` | write every rank to that file | — |
-| `-c path/runs.csv` | append one CSV row of run details to that file | — |
+| `-c path/bench.csv` | append one CSV row of run details to that file | — |
 
 The thread count comes from `OMP_NUM_THREADS`:
 
