@@ -1140,6 +1140,7 @@ sovrapposizione fra trasferimenti e calcolo.}
 
 \subsection{Possibili miglioramenti}
 \begin{itemize}
+  \iffalse
   \item \textbf{Gestione out-of-core.} Una
     logica di streaming per grafi eccedenti la memoria della GPU, che
     per le istanze considerate non è necessaria.
@@ -1147,6 +1148,7 @@ sovrapposizione fra trasferimenti e calcolo.}
     del convertitore.
   \item \textbf{Granularità adattiva sulla GPU.} Le misure di
     Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate.
+  \fi
   \item \textbf{Ricerca su politica di scheduling e dimensione del blocco.}
     Il parametro non governa solo il bilanciamento del carico: blocchi più
     ampi danno a un thread più righe consecutive, quindi più riuso delle
