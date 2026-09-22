@@ -70,7 +70,7 @@ thread. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
 implementazioni indipendenti. Le misure sulla versione OpenMP mostrano uno
-speed-up di $2{,}4$--$2{,}9\times$ su 4 core fisici e, soprattutto, una
+speed-up di $2{,}4$--$2{,}9\times$ e, soprattutto, una
 saturazione oltre i 4 thread che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
@@ -944,7 +944,8 @@ dove $T_{\mathrm{seq}}$ è il tempo della build sequenziale (compilata senza
 
 \begin{table}[h]
 \centering
-\caption{Tempi di esecuzione in secondi.}
+\caption{Tempi di esecuzione in secondi. Lo speed-up dell'ultima colonna è
+calcolato sulla configurazione in doppia precisione più veloce.}
 \label{tab:scaling}
 \begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
