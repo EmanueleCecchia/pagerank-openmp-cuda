@@ -48,15 +48,24 @@ Produces four executables in `build/`, all from the same sources:
 Directed edge lists from the [SNAP](https://snap.stanford.edu/data/)
 collection, expected under `data/snap/` and not committed to the repo:
 [wiki-Vote](https://snap.stanford.edu/data/wiki-Vote.html),
+[web-NotreDame](https://snap.stanford.edu/data/web-NotreDame.html),
+[web-Stanford](https://snap.stanford.edu/data/web-Stanford.html),
 [web-Google](https://snap.stanford.edu/data/web-Google.html),
 [web-BerkStan](https://snap.stanford.edu/data/web-BerkStan.html),
+[cit-Patents](https://snap.stanford.edu/data/cit-Patents.html),
+[wiki-topcats](https://snap.stanford.edu/data/wiki-topcats.html),
+[soc-Pokec](https://snap.stanford.edu/data/soc-Pokec.html),
 [soc-LiveJournal1](https://snap.stanford.edu/data/soc-LiveJournal1.html).
 
 ```bash
 mkdir -p data/snap && cd data/snap
-for g in wiki-Vote web-Google web-BerkStan soc-LiveJournal1; do
+for g in wiki-Vote web-NotreDame web-Stanford web-Google web-BerkStan \
+         cit-Patents wiki-topcats soc-LiveJournal1; do
     curl -O https://snap.stanford.edu/data/$g.txt.gz && gunzip $g.txt.gz
 done
+# soc-Pokec is published under another file name
+curl -o soc-Pokec.txt.gz https://snap.stanford.edu/data/soc-pokec-relationships.txt.gz
+gunzip soc-Pokec.txt.gz
 cd ../..
 ```
 
@@ -72,6 +81,12 @@ This writes `web-Google.csr` (the graph) and `web-Google.ids` (the original
 SNAP id of each remapped node, used only for reporting). Options:
 `-o path/graph.csr` to choose the output path, `--drop-self-loops` to discard
 `u -> u` edges.
+
+To convert every downloaded graph at once:
+
+```bash
+for f in data/snap/*.txt; do python3 tools/snap_to_csr.py "$f"; done
+```
 
 The converter holds the whole edge list in memory at roughly 100 bytes per
 edge, so soc-LiveJournal1 peaks near 6.7 GB.

@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-GRAPHS=${GRAPHS:-"wiki-Vote web-Google web-BerkStan soc-LiveJournal1"}
+GRAPHS=${GRAPHS:-"wiki-Vote web-NotreDame web-Stanford web-Google web-BerkStan cit-Patents wiki-topcats soc-Pokec soc-LiveJournal1"}
 THREADS=${THREADS:-"1 2 4 8"}
 REPS=${REPS:-3}
 DATA=${DATA:-data/snap}
