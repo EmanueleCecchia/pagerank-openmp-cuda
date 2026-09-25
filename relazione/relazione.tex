@@ -828,7 +828,7 @@ che non condividono codice con l'implementazione sotto esame
 
 \stacco
 Un errore nella conversione da testo a CSR (\texttt{tools/snap\_to\_csr.py}) non sfugge:
-i risultati dei riferimenti (matrice densa e NetworkX) nascono dall'edge list originale
+i risultati dei riferimenti (matrice densa o sparsa e NetworkX) nascono dall'edge list originale
 (\texttt{.txt}), mentre il programma C calcola dal \texttt{.csr}: se i due non
 corrispondessero, il confronto metterebbe a paragone il PageRank di due grafi
 diversi e i valori non coinciderebbero.
@@ -837,9 +837,25 @@ diversi e i valori non coinciderebbero.
 Poiché la matrice densa richiede $N^2$ elementi, il punto 1 è possibile solo
 sul grafo più piccolo: 386~MiB per \texttt{wiki-Vote} contro i 5,6~TiB che
 servirebbero per \texttt{web-Google}. È questa la ragione per cui
-\texttt{wiki-Vote} fa parte dell'insieme di test. Invece, sui grafi maggiori 
-(\texttt{web-Google}, \texttt{web-BerkStan}),
-il confronto del programma C con NetworkX è l'unico possibile.
+\texttt{wiki-Vote} fa parte dell'insieme di test. Sui quattro grafi web il
+confronto del programma C con NetworkX è l'unico possibile.
+
+\stacco
+Sulle quattro istanze maggiori non lo è neppure questo. NetworkX
+rappresenta il grafo con dizionari Python, a circa 500 byte per arco
+(1,2~GB già per i 2,3 milioni di archi di \texttt{web-Stanford}):
+\texttt{cit-Patents} ne richiederebbe più di 8, \texttt{soc-LiveJournal1}
+più di 30. Per queste istanze il riferimento del punto 1 viene ricalcolato su
+una \textbf{matrice sparsa} (opzione \texttt{-{}-sparse}, con
+\texttt{scipy.sparse}): la stessa matrice $\mathbf{MT}$, di cui si
+memorizzano i soli $M$ elementi non nulli, e soprattutto la stessa funzione
+di iterazione, alla quale la matrice densa e quella sparsa vengono passate
+indifferentemente. La memoria diventa così proporzionale agli archi, 4,4~GB
+al picco su \texttt{soc-LiveJournal1}. Il riferimento sparso non viene
+confrontato direttamente con NetworkX, ma vi è legato per due vie: esegue lo
+stesso codice del riferimento denso, che al punto 2 concorda con NetworkX, e
+sui quattro grafi web, dove funzionano entrambi, il programma C concorda sia
+con l'uno sia con l'altro.
 
 \stacco
 Il controllo viene svolto sia su tutti i valori sia sull'ordine dei primi $k$ nodi (default 100).
@@ -853,7 +869,9 @@ Il controllo di convergenza al punto 3 è stato implementato perché il riferime
 programma ricevono lo stesso tetto di iterazioni, e se lo si abbassa entrambi
 si fermano allo stesso punto, con valori che coincidono pur essendo lontani
 dall'essersi stabilizzati. Il confronto avrebbe allora successo su un risultato
-quantitativamente sbagliato, accettandolo come corretto.
+quantitativamente sbagliato, accettandolo come corretto. Per la stessa ragione
+anche il riferimento, denso o sparso, viene scartato se non giunge a
+convergenza.
 
 % =====================================================================
 \section{Risultati sperimentali}
@@ -944,13 +962,23 @@ sequenziale; ripetuti con quella OpenMP danno lo stesso scarto.
 \midrule
 NetworkX contro denso & \texttt{wiki-Vote} & $4{,}5\cdot10^{-12}$ & fraintendimenti dell'algoritmo \\
 C contro denso        & \texttt{wiki-Vote} & $7{,}1\cdot10^{-14}$ & errori nella rappresentazione dei dati \\
-C contro NetworkX     & grafi maggiori     & $6{,}5\cdot10^{-11}$ & errori su grafi grandi \\
+C contro NetworkX     & grafi web          & $3{,}6\cdot10^{-10}$ & errori su grafi grandi \\
+C contro sparso       & grafi maggiori     & $1{,}9\cdot10^{-13}$ & errori dove NetworkX non entra \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \stacco
-In tutte le 72 esecuzioni registrate in \texttt{results/bench.csv} la somma dei
+Lo scarto contro NetworkX riportato in tabella è quello di
+\texttt{web-NotreDame}, il più alto dei quattro grafi web; sugli altri tre
+resta sotto $6{,}5\cdot10^{-11}$. In ogni caso è ben al di sotto della soglia di
+$10^{-8}$ usata dallo strumento di verifica. Sugli stessi quattro grafi il
+riferimento sparso dista dal programma C al più $1{,}0\cdot10^{-13}$: la
+differenza con NetworkX viene dunque dalla tolleranza con cui NetworkX stesso
+si ferma, che cresce con $N$, e non dal programma.
+
+\stacco
+In tutte le 162 esecuzioni registrate in \texttt{results/bench.csv} la somma dei
 rank si discosta da 1 per non più di $1{,}4\cdot10^{-11}$ in doppia precisione
 e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
 
@@ -1149,8 +1177,8 @@ sovrapposizione fra trasferimenti e calcolo.}
     accessi imprevedibili invece di uno. Precalcolare il quoziente porta le
     divisioni da $M$ a $N$, ma soprattutto lascia una lettura sola per arco.
   \item \textbf{Verifica indipendente e collaudata.} Tre implementazioni
-    concordano, e lo strumento di verifica è stato validato con
-    un'iniezione di guasto.
+    concordano, la verifica copre tutte e nove le istanze, e lo strumento è
+    stato validato con un'iniezione di guasto.
 \end{itemize}
 
 \subsection{Punti deboli e limiti}
@@ -1164,6 +1192,10 @@ sovrapposizione fra trasferimenti e calcolo.}
   \item \textbf{Dimensione della porzione dinamica non ottimizzata.} Il
     valore 256 di \texttt{schedule(dynamic, 256)} non è stato oggetto di
     una ricerca sistematica.
+  \item \textbf{Nessun confronto diretto con codice di terze parti sulle
+    istanze maggiori.} Lì NetworkX non entra in memoria, e il riferimento è
+    solo quello sparso, scritto da me; il legame con NetworkX passa per i
+    grafi minori.
 \end{itemize}
 
 \subsection{Possibili miglioramenti}
