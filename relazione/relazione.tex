@@ -69,8 +69,9 @@ divergere dal codice parallelo né essere falsato dai costi di gestione dei
 thread. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
-implementazioni indipendenti. Le misure sulla versione OpenMP mostrano uno
-speed-up di $2{,}4$--$2{,}9\times$ e, soprattutto, una
+implementazioni indipendenti. Le misure sulla versione OpenMP, condotte su
+nove grafi reali, mostrano uno
+speed-up di $2{,}6$--$3{,}5\times$ e, soprattutto, una
 saturazione oltre i 4 thread che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
@@ -697,8 +698,9 @@ direttive OpenMP sono ignorate dal compilatore quando non gli si passa
 \texttt{-fopenmp}, che produce quindi un programma sequenziale. Oltre a non
 esistere così duplicazione di codice che possa divergere,
 il riferimento sequenziale è \emph{onesto}: misurando la versione parallela
-limitata a un thread si otterrebbe un tempo peggiore
-(Tabella~\ref{tab:scaling}, colonna \emph{1 thr}), perché si pagherebbe
+limitata a un thread si otterrebbe un tempo peggiore, fino al 4\,\%
+(Tabella~\ref{tab:scaling}, colonna \emph{1 thr}; su \texttt{web-Stanford}
+le due misure si equivalgono entro la variabilità fra ripetizioni), perché si pagherebbe
 comunque la creazione del team di thread: usarla come riferimento
 gonfierebbe silenziosamente ogni speed-up dichiarato.
 
@@ -1008,9 +1010,14 @@ calcolato sulla configurazione in doppia precisione più veloce.}
 \textbf{Grafo} & \textbf{seq} & \textbf{1 thr} & \textbf{2 thr} &
 \textbf{4 thr} & \textbf{8 thr} & \textbf{float 8} & \textbf{speed-up} \\
 \midrule
-web-Google       & 1,326  & 1,353  & 0,741 & 0,459 & 0,519 & 0,347 & $2{,}89\times$ \\
-web-BerkStan     & 0,715  & 0,712  & 0,400 & 0,254 & 0,269 & 0,214 & $2{,}82\times$ \\
-soc-LiveJournal1 & 11,863 & 12,442 & 7,457 & 5,088 & 5,014 & 3,608 & $2{,}37\times$ \\
+web-NotreDame    & 0,150  & 0,156  & 0,087 & 0,054 & 0,049 & 0,048 & $3{,}04\times$ \\
+web-Stanford     & 0,325  & 0,319  & 0,165 & 0,099 & 0,092 & 0,096 & $3{,}55\times$ \\
+web-Google       & 1,151  & 1,177  & 0,645 & 0,377 & 0,361 & 0,259 & $3{,}19\times$ \\
+web-BerkStan     & 0,658  & 0,665  & 0,355 & 0,216 & 0,192 & 0,171 & $3{,}43\times$ \\
+cit-Patents      & 1,199  & 1,225  & 0,729 & 0,481 & 0,466 & 0,284 & $2{,}57\times$ \\
+wiki-topcats     & 2,397  & 2,424  & 1,342 & 0,828 & 0,765 & 0,517 & $3{,}13\times$ \\
+soc-Pokec        & 4,098  & 4,115  & 2,293 & 1,401 & 1,400 & 0,907 & $2{,}93\times$ \\
+soc-LiveJournal1 & 11,198 & 11,461 & 6,575 & 4,449 & 4,229 & 3,234 & $2{,}65\times$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1018,24 +1025,24 @@ soc-LiveJournal1 & 11,863 & 12,442 & 7,457 & 5,088 & 5,014 & 3,608 & $2{,}37\tim
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{figure/scalabilita.pdf}
-\caption{Scalabilità della versione OpenMP. Il riferimento per lo speed-up è
-la build sequenziale. La linea
-tratteggiata in (a) indica lo speed-up lineare ideale $S(p) = p$; in (b)
-l'efficienza del 100\,\%. Figura generata da \texttt{tools/plot\_results.py} a partire
+\caption{Scalabilità della versione OpenMP, un pannello per grafo. Il
+riferimento per lo speed-up è la build sequenziale. La linea tratteggiata
+indica lo speed-up lineare ideale $S(p) = p$, l'etichetta il massimo
+raggiunto. Figura generata da \texttt{tools/plot\_results.py} a partire
 da \texttt{results/bench.csv}.}
 \label{fig:scalabilita}
 \end{figure}
 
 \stacco
 La Figura~\ref{fig:scalabilita} mostra che
-le tre curve si allontanano dall'andamento lineare già a 2 thread e si
-appiattiscono fra 4 e 8, con una vera e propria inversione su due grafi su
-tre. L'efficienza si aggira sull'80--90\,\% a 2 thread,
-sul 60--70\,\% a 4 e sul 30\,\% a 8.
+le otto curve si appiattiscono fra 4 e 8 thread, e quasi tutte si allontanano
+dall'andamento lineare già a 2: fa eccezione \texttt{web-Stanford}, che a 2
+thread ha ancora un'efficienza del 98\,\%. L'efficienza è dell'82--98\,\% a 2
+thread, del 62--82\,\% a 4 e del 32--44\,\% a 8.
 
 \paragraph{Il calcolo è memory-bound.}
-\texttt{web-Google} e \texttt{web-BerkStan} sono più veloci a 4 thread che a 8,
-mentre \texttt{soc-LiveJournal1} resta sostanzialmente stabile. Il processore
+Passando da 4 a 8 thread il tempo, anziché dimezzarsi, scende al più
+dell'11\,\% (\texttt{web-BerkStan}), e su \texttt{soc-Pokec} resta invariato. Il processore
 possiede 4 core fisici presentati come 8 thread logici; i due thread che
 stanno sullo stesso core condividono anche cache e unità di accesso alla memoria. 
 Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
@@ -1043,14 +1050,25 @@ Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
 non le unità che le servono. Il \emph{simultaneous multithreading}  (SMT) rende quando un thread calcola
 mentre l'altro aspetta, ma qui aspettano entrambi.
 
+\stacco
+A 8 thread, inoltre, il programma occupa tutti i processori logici, e
+qualunque altra attività del sistema gliene sottrae uno: il thread che vi
+girava si ferma, e gli altri lo aspettano alla fine di ogni ciclo parallelo.
+Per questo le misure sono state prese a macchina scarica, con browser ed
+editor chiusi. La dispersione fra le tre ripetizioni resta così sotto il
+5\,\% in 40 delle 48 configurazioni; gli scarti maggiori si concentrano a 8
+thread sulle esecuzioni più brevi, quelle di \texttt{web-NotreDame} e
+\texttt{web-Stanford}, che durano un decimo di secondo o meno e dove anche
+un'interruzione breve pesa: fino al 96\,\% su \texttt{web-NotreDame}.
+
 \paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
-A 4 thread \texttt{web-Google} impiega $0{,}459$~s contro i $0{,}254$~s di \texttt{web-BerkStan}, l'$81\,\%$
+A 4 thread \texttt{web-Google} impiega $0{,}377$~s contro i $0{,}216$~s di \texttt{web-BerkStan}, il $74\,\%$
 in più, e non è una questione di iterazioni perché ne esegue di meno (62 contro 64).
 Non è nemmeno una questione di lavoro
 svolto, perché \texttt{web-BerkStan} ha il $49\,\%$ di archi in più: a parità di
-arco \texttt{web-Google} costa $1{,}45$~ns 
-\footnote{0,459 s  /  62 iterazioni = 0,0074; 0,0074 s  /  5105039 archi = 1,45 ns per arco.} 
-contro $0{,}52$ di \texttt{web-BerkStan}, quasi il triplo.
+arco \texttt{web-Google} costa $1{,}19$~ns
+\footnote{0,377 s  /  62 iterazioni = 0,00608 s; 0,00608 s  /  5105039 archi = 1,19 ns per arco.}
+contro $0{,}44$ di \texttt{web-BerkStan}, più di due volte e mezzo tanto.
 
 \stacco
 Ogni riga --- i predecessori di un nodo --- porta un costo fisso (leggere i due
@@ -1058,12 +1076,12 @@ estremi in \texttt{row\_ptr}, scrivere il rank nuovo e aggiornare l'errore),
 e \texttt{web-Google} ha il $28\,\%$ di nodi
 in più. Quel $28\,\%$ è però un tetto di miglioramento ideale:
 lo si raggiungerebbe solo se gli archi
-fossero gratis, mentre il divario osservato è l'$81\,\%$.
+fossero gratis, mentre il divario osservato è il $74\,\%$.
 Non lo spiega neppure la concentrazione nelle righe lunghe:
-\texttt{soc-LiveJournal1} ha le righe più lunghe dei tre e il $60\,\%$ degli
+\texttt{soc-LiveJournal1} ha il $60\,\%$ degli
 archi oltre i 32 predecessori, quasi quanto il $67\,\%$ di
-\texttt{web-BerkStan} (Tabella~\ref{tab:bins}), eppure costa $1{,}45$~ns per
-arco esattamente come \texttt{web-Google}.
+\texttt{web-BerkStan} (Tabella~\ref{tab:bins}), eppure per arco costa
+$1{,}26$~ns, poco più di \texttt{web-Google}.
 
 \stacco
 La differenza sta in quanto distano un indice e il successivo,
@@ -1079,7 +1097,7 @@ quasi sequenziale.
 In \texttt{web-Google} gli indici sono sparsi su tutto l'array, il salto mediano
 è di quasi $17\,000$ posizioni (Tabella~\ref{tab:localita}) e ogni arco pretende 
 un nuovo nodo, e quindi una linea di cache nuova: 64 byte trasferiti per usarne solo 8.
-Su una iterazione fanno $308$~MiB di linee di cache richieste contro $29$.
+Su una iterazione fanno $309$~MiB di linee di cache richieste contro $29$.
 Le letture sequenziali vanno nel verso opposto: \texttt{col\_idx},
 \texttt{row\_ptr} e i vettori di rank (\texttt{nxt} e \texttt{cur}) fanno
 $53$~MiB su \texttt{web-BerkStan} contro $50$ su \texttt{web-Google}.
@@ -1089,29 +1107,55 @@ La Tabella~\ref{tab:riga-nodo1} mostra la riga del nodo~1 nei due grafi.
 Le linee richieste non costano tutte uguale: \texttt{contrib} occupa
 $6{,}7$~MiB su \texttt{web-Google} e $5{,}2$~MiB su \texttt{web-BerkStan},
 abbastanza poco perché una parte degli accessi sparsi resti servita dalla
-cache invece di arrivare in memoria. È ciò che manca a \texttt{soc-LiveJournal1},
-i cui $37$~MiB di \texttt{contrib} in L3 non entrano: nonostante una località
-migliore di quella di \texttt{web-Google}, paga lo stesso tempo per arco,
-perché la gran parte delle linee che il gather richiede va cercata in memoria.
+cache invece di arrivare in memoria. L'altra coppia di grafi web lo mostra
+dal lato opposto: \texttt{web-Stanford} ha indici sparsi quasi quanto
+\texttt{web-Google}, $0{,}91$ linee di cache per arco contro $0{,}99$, ma il
+suo \texttt{contrib} di $2{,}2$~MiB sta per intero in cache, e il divario con
+\texttt{web-NotreDame}, locale come \texttt{web-BerkStan}, si riduce a
+$0{,}68$ contro $0{,}62$~ns per arco. Che \texttt{web-NotreDame} costi per
+arco più di \texttt{web-BerkStan} dipende invece dalla lunghezza delle righe,
+$4{,}6$ predecessori in media contro $11{,}1$: il costo fisso di ogni riga si
+divide su meno archi.
+
+\stacco
+La cache manca del tutto alle quattro istanze maggiori, i cui
+\texttt{contrib}, da $12{,}5$ a $37$~MiB, nella L3 da 8~MiB non entrano: la
+gran parte delle linee che il gather richiede va cercata in memoria, e il
+costo per arco dipende sia dalla località sia da quanta parte di
+\texttt{contrib} la cache riesce ancora a trattenere.
+\texttt{wiki-topcats}, la più locale delle quattro ($0{,}42$ linee per arco),
+costa $0{,}79$~ns per arco; \texttt{cit-Patents}, la meno locale ($0{,}96$) e
+con le righe più corte, $1{,}94$~ns, il valore più alto di tutti.
+\texttt{soc-Pokec} ha indici più sparsi di \texttt{soc-LiveJournal1} ($0{,}80$
+linee per arco contro $0{,}52$) ma un \texttt{contrib} tre volte più piccolo,
+e costa meno ($1{,}04$ contro $1{,}26$~ns); \texttt{soc-LiveJournal1}, a sua
+volta, nonostante una località migliore di quella di \texttt{web-Google}, paga
+per arco un po' di più.
 
 \begin{table}[h]
 \centering
 \caption{Località della lettura sparsa su \texttt{contrib}. Il salto è la
 mediana di \texttt{col\_idx[j+1] - col\_idx[j]} all'interno di una riga; le
 linee di cache distinte sono contate su blocchi di 256 righe, che è l'unità di
-schedulazione del ciclo, e il gather per iterazione è il volume che ne risulta.
+schedulazione del ciclo, e divise per il numero di archi danno le linee per
+arco; il gather per iterazione è il volume che ne risulta.
 Misure prodotte da \texttt{tools/locality\_stats.py} dai file \texttt{.csr};
 i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling}.}
 \label{tab:localita}
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Grafo} & \textbf{salto} & \textbf{gather} &
+\textbf{Grafo} & \textbf{salto} & \textbf{linee} & \textbf{gather} &
 \textbf{\texttt{contrib}} & \textbf{ns per} \\
- & \textbf{mediano} & \textbf{per iter.} & & \textbf{arco} \\
+ & \textbf{mediano} & \textbf{per arco} & \textbf{per iter.} & & \textbf{arco} \\
 \midrule
-web-Google       & 16\,836  & 308 MiB    & 6,7 MiB  & 1,45 \\
-web-BerkStan     & 1        & 29 MiB     & 5,2 MiB  & 0,52 \\
-soc-LiveJournal1 & 3\,104   & 2\,173 MiB & 37,0 MiB & 1,45 \\
+web-NotreDame    & 1        & 0,07 & 7 MiB      & 2,5 MiB  & 0,62 \\
+web-Stanford     & 1\,080   & 0,91 & 129 MiB    & 2,2 MiB  & 0,68 \\
+web-Google       & 16\,836  & 0,99 & 309 MiB    & 6,7 MiB  & 1,19 \\
+web-BerkStan     & 1        & 0,06 & 29 MiB     & 5,2 MiB  & 0,44 \\
+cit-Patents      & 60\,903  & 0,96 & 973 MiB    & 28,8 MiB & 1,94 \\
+wiki-topcats     & 59       & 0,42 & 725 MiB    & 13,7 MiB & 0,79 \\
+soc-Pokec        & 10\,319  & 0,80 & 1\,501 MiB & 12,5 MiB & 1,04 \\
+soc-LiveJournal1 & 3\,104   & 0,52 & 2\,172 MiB & 37,0 MiB & 1,26 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1135,12 +1179,17 @@ soc-LiveJournal1 & 3\,104   & 2\,173 MiB & 37,0 MiB & 1,45 \\
 \end{table}
 
 \subsection{Confronto fra le varianti \texttt{float} e \texttt{double}}
-La variante in singola precisione riduce il tempo del $33\,\%$ su
-\texttt{web-Google} ($0{,}347$~s contro $0{,}519$~s a pari numero di thread),
-del $21\,\%$ su \texttt{web-BerkStan} e del $28\,\%$ su
-\texttt{soc-LiveJournal1}, a parità di numero di iterazioni.
-Il guadagno è coerente con il
-dimezzamento dei byte trasferiti per ogni rank, ed è un'ulteriore conferma
+A 8 thread e a parità di numero di iterazioni, la variante in singola
+precisione riduce il tempo fra il $24$ e il $39\,\%$ sulle cinque istanze in
+cui \texttt{contrib}, in doppia precisione, occupa quasi tutta la L3 o la
+supera: \texttt{web-Google} ($0{,}259$~s contro $0{,}361$~s),
+\texttt{cit-Patents}, \texttt{wiki-topcats}, \texttt{soc-Pokec} e
+\texttt{soc-LiveJournal1}. Sugli altri tre grafi web, dove \texttt{contrib}
+sta in cache o viene letto quasi in sequenza, il guadagno scende all'11\,\%
+su \texttt{web-BerkStan} e sparisce sugli altri due, dove la differenza, fra
+$-5$ e $+3\,\%$, resta dentro la dispersione delle misure.
+Il guadagno si concentra dunque dove il gather va in memoria, ed è coerente
+con il dimezzamento dei byte trasferiti per ogni rank: un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
 
 Il limite della singola precisione si manifesta sulla soglia di
