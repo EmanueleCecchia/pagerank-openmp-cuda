@@ -200,8 +200,9 @@ python3 tools/plot_results.py
 python3 tools/locality_stats.py data/snap/*.csr
 ```
 
-`plot_results.py` turns `results/bench.csv` into the speed-up and efficiency
-figures, written to `relazione/figure/scalabilita.pdf` and `.png`.
+`plot_results.py` turns `results/bench.csv` into the speed-up figure, one
+panel per graph, written to `relazione/figure/scalabilita.pdf` and `.png`;
+it also prints speed-up and efficiency per thread count.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
 the cache lines the gather touches per edge.
 
