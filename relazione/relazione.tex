@@ -140,9 +140,10 @@ proprio rank. Il salto casuale lo libera con probabilità $1-d$, ma la
 quota $d$ restante cercherebbe un collegamento che non esiste: è questa
 che il termine raccoglie e ridistribuisce. Ignorandolo, ad ogni iterazione una frazione della massa
 totale sparirebbe e il vettore cesserebbe di essere una distribuzione di
-probabilità. Nei dataset utilizzati questo non è un caso limite: il
-$15{,}6\,\%$ dei nodi di \texttt{web-Google} e l'$11{,}1\,\%$ di
-\texttt{soc-LiveJournal1} sono dangling (Tabella~\ref{tab:dataset}).
+probabilità. Nei dataset utilizzati questo non è un caso limite: sono
+dangling il $15{,}6\,\%$ dei nodi di \texttt{web-Google}, il $44{,}6\,\%$ di
+\texttt{cit-Patents} e il $57{,}7\,\%$ di \texttt{web-NotreDame}
+(Tabella~\ref{tab:dataset}).
 La conseguenza pratica è che $\sum_v \mathrm{PR}(v) = 1$ costituisce un test di
 correttezza.
 
@@ -767,11 +768,14 @@ blocco per riga a seconda della sua lunghezza).}
 \paragraph{Perché una granularità variabile.}
 La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info.c},
 è riportata in Tabella~\ref{tab:bins}, e le sue due metà dicono cose
-opposte. Nei tre grafi maggiori fra il 45\,\% e il 64\,\% delle righe
-contiene al più 4 elementi, ma quelle righe valgono appena il 6--16\,\%
-degli archi; le righe oltre i 32 elementi sono fra il 2,6 e il 10,7\,\% e ne
-raccolgono dal 40 al 67\,\%, con singole righe che arrivano a decine di
-migliaia di predecessori. Queste considerazioni vanno a giustificare la scelta: 
+opposte. Nei grafi utilizzati, \texttt{wiki-Vote} a parte, fra il 31 e
+l'88\,\% delle righe contiene al più 4 elementi, ma quelle righe valgono
+appena il 3,5--29\,\% degli archi; le righe oltre i 32 elementi sono al più il
+18\,\% e ne raccolgono dal 40 al 68\,\%, con singole righe che arrivano a
+centinaia di migliaia di predecessori. Fa eccezione \texttt{cit-Patents}, che
+non ha hub: due terzi dei suoi archi stanno in righe da 5 a 32 elementi, e
+quelle più lunghe ne raccolgono appena il 9\,\%.
+Queste considerazioni vanno a giustificare la scelta:
 le righe vengono raggruppate per lunghezza, così che un warp o un blocco 
 riceva righe di dimensione simile e nessun thread resti inattivo ad aspettare 
 gli altri.
@@ -790,8 +794,13 @@ quota percentuale di nodi e di archi per classe.}
 \textbf{max} \\
 \midrule
 wiki-Vote        & 66,5 & 3,0  & 0,5  & 12,9 & 14,8 & 17,6 & 84,8 & 457 \\
+web-NotreDame    & 0,0  & 87,6 & 29,2 & 10,1 & 24,0 & 2,3  & 46,8 & 10\,721 \\
+web-Stanford     & 7,2  & 70,3 & 17,8 & 20,6 & 26,8 & 1,9  & 55,4 & 38\,606 \\
 web-Google       & 18,4 & 56,7 & 16,4 & 22,3 & 43,2 & 2,6  & 40,4 & 6\,326 \\
 web-BerkStan     & 9,9  & 64,2 & 11,5 & 22,6 & 21,5 & 3,3  & 67,0 & 84\,208 \\
+cit-Patents      & 13,7 & 56,5 & 25,9 & 29,0 & 65,0 & 0,8  & 9,1  & 779 \\
+wiki-topcats     & 0,0  & 58,4 & 7,4  & 35,0 & 24,6 & 6,6  & 67,9 & 238\,040 \\
+soc-Pokec        & 6,9  & 31,4 & 3,5  & 43,7 & 33,4 & 18,0 & 63,1 & 13\,733 \\
 soc-LiveJournal1 & 7,4  & 45,2 & 6,2  & 36,7 & 33,8 & 10,7 & 60,0 & 13\,906 \\
 \bottomrule
 \end{tabular}
@@ -870,8 +879,9 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 \daFare{Utilizzare anche altre macchine}
 
 \subsection{Istanze di prova}
-Sono stati usati quattro grafi reali della collezione
-SNAP~\cite{snap}.
+Sono stati usati nove grafi reali della collezione
+SNAP~\cite{snap}: reti di pagine web, una rete di citazioni fra brevetti, una
+di collegamenti fra voci di Wikipedia e due reti sociali.
 
 \begin{table}[h]
 \centering
@@ -882,23 +892,41 @@ SNAP~\cite{snap}.
 \textbf{Grafo} & \textbf{Nodi} & \textbf{Archi} & \textbf{Dangling} &
 \textbf{max in-deg} & \textbf{CSR} \\
 \midrule
-wiki-Vote        & 7\,115      & 103\,689       & 1\,005      & 457      & 0,5 MiB \\
-web-Google       & 875\,713    & 5\,105\,039    & 136\,259    & 6\,326   & 29,5 MiB \\
-web-BerkStan     & 685\,230    & 7\,600\,595    & 4\,744      & 84\,208  & 36,8 MiB \\
-soc-LiveJournal1 & 4\,847\,571 & 68\,993\,773   & 539\,119    & 13\,906  & 318,7 MiB \\
+wiki-Vote        & 7\,115      & 103\,689       & 1\,005      & 457       & 0,5 MiB \\
+web-NotreDame    & 325\,729    & 1\,497\,134    & 187\,788    & 10\,721   & 9,4 MiB \\
+web-Stanford     & 281\,903    & 2\,312\,497    & 172         & 38\,606   & 12,0 MiB \\
+web-Google       & 875\,713    & 5\,105\,039    & 136\,259    & 6\,326    & 29,5 MiB \\
+web-BerkStan     & 685\,230    & 7\,600\,595    & 4\,744      & 84\,208   & 36,8 MiB \\
+cit-Patents      & 3\,774\,768 & 16\,518\,948   & 1\,685\,423 & 779       & 106,2 MiB \\
+wiki-topcats     & 1\,791\,489 & 28\,511\,807   & 0           & 238\,040  & 129,3 MiB \\
+soc-Pokec        & 1\,632\,803 & 30\,622\,564   & 200\,110    & 13\,733   & 135,5 MiB \\
+soc-LiveJournal1 & 4\,847\,571 & 68\,993\,773   & 539\,119    & 13\,906   & 318,7 MiB \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \stacco
-Ogni istanza ha un ruolo: \texttt{wiki-Vote} è troppo piccola perché i tempi
+Ogni istanza ha un ruolo. \texttt{wiki-Vote} è troppo piccola perché i tempi
 siano significativi e resta nell'insieme come riferimento di correttezza
-(Sezione~\ref{sec:verifica}); \texttt{web-Google}, non presentando
-particolarità strutturali, fa da caso di riferimento; le due
-maggiori sollecitano aspetti diversi, perché \texttt{web-BerkStan} ha un
-\emph{hub} estremo e una numerazione dei nodi fortemente locale
-(Tabella~\ref{tab:localita}), mentre \texttt{soc-LiveJournal1} ha la
-distribuzione più pesante sulle righe lunghe (Tabella~\ref{tab:bins}).
+(Sezione~\ref{sec:verifica}).
+
+\stacco
+I quattro grafi web, di taglia simile (da 1,5 a 7,6 milioni di archi),
+formano due coppie che differiscono per la numerazione dei nodi: in
+\texttt{web-NotreDame} e \texttt{web-BerkStan} i predecessori di un nodo
+hanno indici vicini, in \texttt{web-Stanford} e \texttt{web-Google} sono
+sparsi su tutto l'array (Tabella~\ref{tab:localita}). Così l'effetto della
+località si osserva su due casi per parte, e non su uno solo.
+
+\stacco
+Le quattro istanze maggiori, da 16,5 a 69 milioni di archi, hanno tutte un
+vettore \texttt{contrib} più grande della cache L3, e ciascuna ha una sua
+particolarità: \texttt{cit-Patents} non ha hub (nessun brevetto è citato più
+di 779 volte) e ha le righe più corte, 4,4 predecessori in media;
+\texttt{wiki-topcats} ha l'hub più estremo, con 238\,040 predecessori, e
+nessun nodo dangling; \texttt{soc-Pokec} e \texttt{soc-LiveJournal1} hanno
+la quota più alta di righe lunghe, oltre 32 predecessori per il 18,0 e il
+10,7\,\% dei nodi (Tabella~\ref{tab:bins}).
 
 \subsection{Correttezza}
 La Tabella~\ref{tab:correttezza} raccoglie i confronti fra le tre
