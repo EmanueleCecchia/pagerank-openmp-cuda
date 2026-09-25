@@ -149,13 +149,19 @@ done
 ```bash
 python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
 python3 tools/verify_pagerank.py data/snap/web-Google.txt --no-dense
+python3 tools/verify_pagerank.py data/snap/soc-LiveJournal1.txt --sparse
 ```
 
 Recomputes PageRank by routes sharing no code with the project and compares
 them against the C executable; exits non-zero on any mismatch, so it works as
-a regression test. `--no-dense` skips the dense N×N reference, which only fits
-in memory for the smallest graph, and checks against networkx alone: that is
-the form to use on the larger graphs.
+a regression test. The default reference is a dense N×N matrix, cross-checked
+against networkx, and only fits in memory for the smallest graph.
+`--no-dense` skips it and checks against networkx alone: that is the form to
+use on the web graphs. networkx needs some 500 bytes per edge, too many for
+cit-Patents and the larger graphs; there `--sparse` runs the dense reference's
+own iteration on a scipy sparse matrix, which fits wherever the edge list
+does (4.4 GB at peak and three minutes on soc-LiveJournal1), and skips
+networkx.
 
 | Option | Meaning | Default |
 |---|---|---|
@@ -165,6 +171,8 @@ the form to use on the larger graphs.
 | `-k NUM` | how many top ranks to compare by order | 100 |
 | `--value-tolerance VAL` | allowed difference per rank | 1e-8 |
 | `--max-nodes NUM` | refuse the dense reference above this size | 15000 |
+| `--no-dense` | networkx as the reference, no dense matrix | — |
+| `--sparse` | sparse-matrix reference, no networkx | — |
 
 ## Reproducing the experiments
 

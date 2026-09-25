@@ -18,9 +18,18 @@ The dense matrix is N^2 * 8 bytes, so it only works on small graphs.
 --no-dense drops it and promotes networkx to reference.
 That is how the larger graphs are checked.
 
+networkx in turn keeps the graph in Python dicts, some 500 bytes per edge,
+which rules it out on the largest graphs too.  --sparse runs the very same
+power iteration as the dense reference, on the same matrix stored in scipy's
+CSR format: only the M non-zeros, so it fits wherever the edge list does.
+networkx is skipped, since the graphs that need --sparse are the ones it
+cannot hold; on the graphs where both run, checking the executable against
+each links the sparse reference to networkx.
+
 Usage:
     python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt
     python3 tools/verify_pagerank.py data/snap/web-Google.txt --no-dense
+    python3 tools/verify_pagerank.py data/snap/soc-LiveJournal1.txt --sparse
 """
 
 import argparse
@@ -81,8 +90,27 @@ def parse_edges(path):
     return np.unique(raw, axis=0), np.unique(raw).tolist()
 
 
+def power_iteration(matrix, dangling, damping, tolerance, max_iters):
+    """Textbook power iteration on the transition matrix.
+
+    The matrix may be a dense array or a scipy sparse one: both multiply a
+    vector with @, so the dense and the sparse reference run this same code.
+
+    Returns the ranks and the number of iterations, or None in its place if
+    the tolerance was never reached.
+    """
+    n = len(dangling)
+    rank = np.full(n, 1.0 / n)
+    for iteration in range(1, max_iters + 1):
+        nxt = (1.0 - damping) / n + damping * (matrix @ rank + rank[dangling].sum() / n)
+        if np.abs(nxt - rank).sum() < tolerance:
+            return nxt, iteration
+        rank = nxt
+    return rank, None
+
+
 def dense_pagerank(edges, order, damping, tolerance, max_iters):
-    """PageRank on a dense transition matrix, by textbook power iteration."""
+    """PageRank on a dense N x N transition matrix."""
     index_of = {original: i for i, original in enumerate(order)}
     n = len(order)
 
@@ -94,13 +122,32 @@ def dense_pagerank(edges, order, damping, tolerance, max_iters):
     dangling = out_deg == 0
     matrix[:, ~dangling] /= out_deg[~dangling]
 
-    rank = np.full(n, 1.0 / n)
-    for _ in range(max_iters):
-        nxt = (1.0 - damping) / n + damping * (matrix @ rank + rank[dangling].sum() / n)
-        if np.abs(nxt - rank).sum() < tolerance:
-            return nxt
-        rank = nxt
-    return rank
+    return power_iteration(matrix, dangling, damping, tolerance, max_iters)
+
+
+def sparse_pagerank(edges, order, damping, tolerance, max_iters):
+    """PageRank on the same transition matrix, stored as scipy CSR.
+
+    Built without a Python loop over the edges, which on tens of millions of
+    them would take minutes: `order` is sorted, so searchsorted maps every
+    original id to its index in one vectorised step.
+    """
+    try:
+        import scipy.sparse
+    except ImportError:
+        raise SystemExit("--sparse needs scipy, which is not installed")
+
+    nodes = np.asarray(order, dtype=np.int64)
+    src = np.searchsorted(nodes, edges[:, 0])
+    dst = np.searchsorted(nodes, edges[:, 1])
+    n = len(order)
+
+    out_deg = np.bincount(src, minlength=n)
+    dangling = out_deg == 0
+    # edges are unique, so no two entries land on the same cell
+    matrix = scipy.sparse.csr_matrix((1.0 / out_deg[src], (dst, src)), shape=(n, n))
+
+    return power_iteration(matrix, dangling, damping, tolerance, max_iters)
 
 
 def networkx_pagerank(edges, order, damping, max_iters):
@@ -282,11 +329,24 @@ def check_rank_sum(run):
 
 # --- driver -----------------------------------------------------------------
 
+def own_reference(solver, name, edges, order, args):
+    """Run the dense or the sparse reference, refusing an unconverged answer:
+    a reference stopped early would make the comparison meaningless."""
+    ranks, iterations = solver(edges, order, args.damping, 1e-15, args.max_iters)
+    if iterations is None:
+        raise SystemExit(f"the {name} reference did not converge within "
+                         f"{args.max_iters} iterations (raise -n)")
+    print(f"      ok: converged in {iterations} iterations, "
+          f"ranks sum to {ranks.sum():.12f}")
+    return ranks
+
+
 def build_reference(args, edges, order, report):
     """Compute the ranks everything else is compared against.
 
-    With --no-dense networkx is the reference itself; otherwise the dense
-    matrix is, and networkx becomes a cross-check on it.
+    With --no-dense networkx is the reference itself; with --sparse the sparse
+    matrix is, alone; otherwise the dense matrix is, and networkx becomes a
+    cross-check on it.
     """
     if args.no_dense:
         print("\n[networkx] third-party reference (dense check skipped)")
@@ -296,10 +356,14 @@ def build_reference(args, edges, order, report):
         print(f"      ok: converged, ranks sum to {ranks.sum():.12f}")
         return Reference(ranks, "networkx", order)
 
+    if args.sparse:
+        print(f"\n[sparse] own reference ({len(edges)} non-zeros; networkx skipped)")
+        ranks = own_reference(sparse_pagerank, "sparse", edges, order, args)
+        return Reference(ranks, "sparse", order)
+
     n = len(order)
     print(f"\n[dense] own reference ({n * n * 8 / 2**20:.0f} MiB matrix)")
-    ranks = dense_pagerank(edges, order, args.damping, 1e-15, args.max_iters)
-    print(f"      ok: converged, ranks sum to {ranks.sum():.12f}")
+    ranks = own_reference(dense_pagerank, "dense", edges, order, args)
     reference = Reference(ranks, "dense", order)
 
     print("\n[networkx] third-party cross-check")
@@ -332,9 +396,13 @@ def parse_args(argv):
                              "prints 9 decimals)")
     parser.add_argument("--max-nodes", type=int, default=MAX_DENSE_NODES,
                         help="refuse graphs larger than this (dense matrix is N^2)")
-    parser.add_argument("--no-dense", action="store_true",
-                        help="skip the N x N reference and check against networkx "
-                             "alone, which makes the check usable on the larger graphs")
+    reference = parser.add_mutually_exclusive_group()
+    reference.add_argument("--no-dense", action="store_true",
+                           help="skip the N x N reference and check against networkx "
+                                "alone, which makes the check usable on the larger graphs")
+    reference.add_argument("--sparse", action="store_true",
+                           help="run the reference on a sparse matrix and skip networkx, "
+                                "which makes the check usable on the largest graphs")
     return parser.parse_args(argv)
 
 
@@ -351,11 +419,11 @@ def main(argv=None):
     n = len(order)
     print(f"           {n} nodes, {len(edges)} unique edges (independent parse)")
 
-    if n > args.max_nodes and not args.no_dense:
+    if n > args.max_nodes and not (args.no_dense or args.sparse):
         raise SystemExit(
             f"{n} nodes would need a {n * n * 8 / 2**30:.1f} GiB dense matrix.\n"
-            f"This check is only meaningful on small graphs; raise --max-nodes "
-            f"if you really have the memory.")
+            f"This check is only meaningful on small graphs: use --no-dense or "
+            f"--sparse, or raise --max-nodes if you really have the memory.")
 
     report = Report()
     reference = build_reference(args, edges, order, report)
