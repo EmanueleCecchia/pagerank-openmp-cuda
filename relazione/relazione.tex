@@ -891,8 +891,10 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 
 \subsection{Istanze di prova}
 Sono stati usati nove grafi reali della collezione
-SNAP~\cite{snap}: reti di pagine web, una rete di citazioni fra brevetti, una
-di collegamenti fra voci di Wikipedia e due reti sociali.
+SNAP~\cite{snap}: una rete di voti fra utenti di Wikipedia, quattro reti
+web (tre di pagine di domini universitari e una diffusa da Google), una rete
+di citazioni fra brevetti, una di collegamenti fra voci di Wikipedia e due
+reti sociali.
 
 \begin{table}[h]
 \centering
@@ -926,12 +928,13 @@ I quattro grafi web, di taglia simile (da 1,5 a 7,6 milioni di archi),
 formano due coppie che differiscono per la numerazione dei nodi: in
 \texttt{web-NotreDame} e \texttt{web-BerkStan} i predecessori di un nodo
 hanno indici vicini, in \texttt{web-Stanford} e \texttt{web-Google} sono
-sparsi su tutto l'array (Tabella~\ref{tab:localita}). Così l'effetto della
+abbastanza lontani da richiedere quasi a ogni arco una linea di cache nuova
+(Tabella~\ref{tab:localita}). Così l'effetto della
 località si osserva su due casi per parte, e non su uno solo.
 
 \stacco
 Le quattro istanze maggiori, da 16,5 a 69 milioni di archi, hanno tutte un
-vettore \texttt{contrib} più grande della cache L3, e ciascuna ha una sua
+vettore \texttt{contrib} in doppia precisione più grande della cache L3, e ciascuna ha una sua
 particolarità: \texttt{cit-Patents} non ha hub (nessun brevetto è citato più
 di 779 volte) e ha le righe più corte, 4,4 predecessori in media;
 \texttt{wiki-topcats} ha l'hub più estremo, con 238\,040 predecessori, e
