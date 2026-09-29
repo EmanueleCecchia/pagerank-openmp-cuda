@@ -200,7 +200,8 @@ CSV: `--macchina Laptop results/bench.csv --macchina Server results/server.csv`
 draws one efficiency curve per machine, over the thread counts it measured,
 while the speed-up figure stays on the first.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
-the cache lines the gather touches per edge.
+the cache lines the gather touches: their count, per edge and per line, and
+the MiB one iteration asks for.
 
 ## Project structure
 
