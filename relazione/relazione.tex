@@ -1016,17 +1016,30 @@ soc-LiveJournal1 & 11,198 & 11,461 & 6,575 & 4,449 & 4,229 & 3,234 & $2{,}65\tim
 \includegraphics[width=\linewidth]{figure/scalabilita.pdf}
 \caption{Scalabilità della versione OpenMP, un pannello per grafo. Il
 riferimento per lo speed-up è la build sequenziale. La linea tratteggiata
-indica lo speed-up lineare ideale $S(p) = p$, l'etichetta il massimo
-raggiunto. Figura generata da \texttt{tools/plot\_results.py} a partire
+indica lo speed-up lineare ideale $S(p) = p$, la linea blu quello misurato,
+con il massimo raggiunto in etichetta.
+Figura generata da \texttt{tools/plot\_results.py} a partire
 da \texttt{results/bench.csv}.}
 \label{fig:scalabilita}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figure/efficienza.pdf}
+\caption{Efficienza parallela della versione OpenMP, un
+pannello per grafo. La linea tratteggiata indica l'efficienza ideale del
+100\,\%, la linea blu quella misurata, con in etichetta il valore al massimo
+numero di thread. Figura generata da
+\texttt{tools/plot\_results.py} a partire da \texttt{results/bench.csv}.}
+\label{fig:efficienza}
 \end{figure}
 
 \stacco
 La Figura~\ref{fig:scalabilita} mostra che
 le otto curve si appiattiscono fra 4 e 8 thread, e quasi tutte si allontanano
 dall'andamento lineare già a 2: fa eccezione \texttt{web-Stanford}, che a 2
-thread ha ancora un'efficienza del 98\,\%. L'efficienza è dell'82--98\,\% a 2
+thread ha ancora un'efficienza del 98\,\%. 
+L'efficienza (Figura~\ref{fig:efficienza}) è dell'82--98\,\% a 2
 thread, del 62--82\,\% a 4 e del 32--44\,\% a 8.
 
 \paragraph{Il calcolo è memory-bound.}
