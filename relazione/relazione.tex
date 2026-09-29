@@ -1052,17 +1052,6 @@ Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
 non le unità che le servono. Il \emph{simultaneous multithreading}  (SMT) rende quando un thread calcola
 mentre l'altro aspetta, ma qui aspettano entrambi.
 
-\stacco
-A 8 thread, inoltre, il programma occupa tutti i processori logici, e
-qualunque altra attività del sistema gliene sottrae uno: il thread che vi
-girava si ferma, e gli altri lo aspettano alla fine di ogni ciclo parallelo.
-Per questo le misure sono state prese a macchina scarica, con browser ed
-editor chiusi. La dispersione fra le tre ripetizioni resta così sotto il
-5\,\% in 40 delle 48 configurazioni; gli scarti maggiori si concentrano a 8
-thread sulle esecuzioni più brevi, quelle di \texttt{web-NotreDame} e
-\texttt{web-Stanford}, che durano un decimo di secondo o meno e dove anche
-un'interruzione breve pesa: fino al 96\,\% su \texttt{web-NotreDame}.
-
 \paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
 A 4 thread \texttt{web-Google} impiega $0{,}377$~s contro i $0{,}216$~s di \texttt{web-BerkStan}, il $74\,\%$
 in più, e non è una questione di iterazioni perché ne esegue di meno (62 contro 64).
@@ -1093,12 +1082,16 @@ In \texttt{web-BerkStan} i predecessori di un
 nodo hanno indici quasi consecutivi, infatti il salto mediano fra due indici della
 stessa riga è $1$, una conseguenza di come sono stati raccolti e salvati i dati:
 una sola linea di cache da 64 byte porta con sé 8 contributi consecutivi,
-e ne bastano poche per servire un'intera riga, cosicché questa raccolta di
+e ne bastano poche per servire un'intera riga: in media una linea ogni 16
+archi, $0{,}06$ linee per arco (Tabella~\ref{tab:localita}),
+cosicché questa raccolta di
 valori da posizioni sparse --- il \emph{gather} --- si riduce a una lettura
 quasi sequenziale.
-In \texttt{web-Google} gli indici sono sparsi su tutto l'array, il salto mediano
-è di quasi $17\,000$ posizioni (Tabella~\ref{tab:localita}) e ogni arco pretende 
-un nuovo nodo, e quindi una linea di cache nuova: 64 byte trasferiti per usarne solo 8.
+In \texttt{web-Google} gli indici sono sparsi su tutto l'array, con un salto mediano di quasi $17\,000$ posizioni, e
+quasi ogni arco pretende una linea di cache nuova ($0{,}99$ linee per
+arco)\footnote{Linee di cache distinte contate da \texttt{tools/locality\_stats.py};
+5054775 linee / 5105039 archi = 0,99 linee per arco; 5054775 linee
+$\times$ 64 byte = 309 MiB per iterazione.}: 64 byte trasferiti per usarne solo 8.
 Su una iterazione fanno $309$~MiB di linee di cache richieste contro $29$.
 Le letture sequenziali vanno nel verso opposto: \texttt{col\_idx},
 \texttt{row\_ptr} e i vettori di rank (\texttt{nxt} e \texttt{cur}) fanno
@@ -1112,7 +1105,7 @@ abbastanza poco perché una parte degli accessi sparsi resti servita dalla
 cache invece di arrivare in memoria. L'altra coppia di grafi web lo mostra
 dal lato opposto: \texttt{web-Stanford} ha indici sparsi quasi quanto
 \texttt{web-Google}, $0{,}91$ linee di cache per arco contro $0{,}99$, ma il
-suo \texttt{contrib} di $2{,}2$~MiB sta per intero in cache, e il divario con
+suo \texttt{contrib} di $2{,}2$~MiB sta per intero in cache con ampio margine, e il divario con
 \texttt{web-NotreDame}, locale come \texttt{web-BerkStan}, si riduce a
 $0{,}68$ contro $0{,}62$~ns per arco. Che \texttt{web-NotreDame} costi per
 arco più di \texttt{web-BerkStan} dipende invece dalla lunghezza delle righe,
@@ -1184,12 +1177,12 @@ soc-LiveJournal1 & 3\,104   & 0,52 & 2\,172 MiB & 37,0 MiB & 1,26 \\
 A 8 thread e a parità di numero di iterazioni, la variante in singola
 precisione riduce il tempo fra il $24$ e il $39\,\%$ sulle cinque istanze in
 cui \texttt{contrib}, in doppia precisione, occupa quasi tutta la L3 o la
-supera: \texttt{web-Google} ($0{,}259$~s contro $0{,}361$~s),
+supera: \texttt{web-Google},
 \texttt{cit-Patents}, \texttt{wiki-topcats}, \texttt{soc-Pokec} e
 \texttt{soc-LiveJournal1}. Sugli altri tre grafi web, dove \texttt{contrib}
 sta in cache o viene letto quasi in sequenza, il guadagno scende all'11\,\%
-su \texttt{web-BerkStan} e sparisce sugli altri due, dove la differenza, fra
-$-5$ e $+3\,\%$, resta dentro la dispersione delle misure.
+su \texttt{web-BerkStan} e sparisce sugli altri due, dove la differenza ($+3\,\%$ su \texttt{web-NotreDame},
+$-4\,\%$ su \texttt{web-Stanford}) può essere attribuita al rumore di misura.
 Il guadagno si concentra dunque dove il gather va in memoria, ed è coerente
 con il dimezzamento dei byte trasferiti per ogni rank: un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
