@@ -82,7 +82,11 @@ def parse_edges(path):
 
 
 def dense_pagerank(edges, order, damping, tolerance, max_iters):
-    """PageRank on a dense transition matrix, by textbook power iteration."""
+    """PageRank on a dense transition matrix, by textbook power iteration.
+
+    Returns the ranks and the number of iterations, or None in its place if
+    the tolerance was never reached.
+    """
     index_of = {original: i for i, original in enumerate(order)}
     n = len(order)
 
@@ -95,12 +99,12 @@ def dense_pagerank(edges, order, damping, tolerance, max_iters):
     matrix[:, ~dangling] /= out_deg[~dangling]
 
     rank = np.full(n, 1.0 / n)
-    for _ in range(max_iters):
+    for iteration in range(1, max_iters + 1):
         nxt = (1.0 - damping) / n + damping * (matrix @ rank + rank[dangling].sum() / n)
         if np.abs(nxt - rank).sum() < tolerance:
-            return nxt
+            return nxt, iteration
         rank = nxt
-    return rank
+    return rank, None
 
 
 def networkx_pagerank(edges, order, damping, max_iters):
@@ -298,8 +302,13 @@ def build_reference(args, edges, order, report):
 
     n = len(order)
     print(f"\n[dense] own reference ({n * n * 8 / 2**20:.0f} MiB matrix)")
-    ranks = dense_pagerank(edges, order, args.damping, 1e-15, args.max_iters)
-    print(f"      ok: converged, ranks sum to {ranks.sum():.12f}")
+    ranks, iterations = dense_pagerank(edges, order, args.damping, 1e-15, args.max_iters)
+    if iterations is None:
+        # a reference stopped early would make the comparison meaningless
+        raise SystemExit(f"the dense reference did not converge within "
+                         f"{args.max_iters} iterations (raise -n)")
+    print(f"      ok: converged in {iterations} iterations, "
+          f"ranks sum to {ranks.sum():.12f}")
     reference = Reference(ranks, "dense", order)
 
     print("\n[networkx] third-party cross-check")
