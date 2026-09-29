@@ -967,12 +967,7 @@ C contro NetworkX     & grafi web          & $3{,}6\cdot10^{-10}$ & errori su gr
 Lo scarto contro NetworkX riportato in tabella è quello di
 \texttt{web-NotreDame}, il più alto dei quattro grafi web; sugli altri tre
 resta sotto $6{,}5\cdot10^{-11}$. In ogni caso è ben al di sotto della soglia di
-$10^{-8}$ usata dallo strumento di verifica. Uno scarto di quest'ordine è
-compatibile con la tolleranza con cui NetworkX stesso si ferma: il suo
-criterio confronta la variazione complessiva dei rank fra due iterazioni con
-$N$ volte la tolleranza richiesta, e cresce quindi con $N$; su
-\texttt{web-NotreDame} la soglia è $3{,}3\cdot10^{-9}$.
-
+$10^{-8}$ usata dallo strumento di verifica.
 \stacco
 In tutte le 162 esecuzioni registrate in \texttt{results/bench.csv} la somma dei
 rank si discosta da 1 per non più di $1{,}4\cdot10^{-11}$ in doppia precisione
