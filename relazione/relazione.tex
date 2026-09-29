@@ -33,6 +33,12 @@
   \par\vspace{4pt}%
 }
 
+\definecolor{nuovo}{RGB}{0,70,190}
+\DeclareRobustCommand{\nuovo}[1]{\textcolor{nuovo}{#1}}
+\usepackage{soul}
+\soulregister{\ref}{7}
+\DeclareRobustCommand{\vecchio}[1]{\textcolor{red}{\st{#1}}}
+
 % ---- stacco fra capoversi, senza rientro --------------------------
 \newcommand{\stacco}{\par\medskip\noindent}
 
