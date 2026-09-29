@@ -192,9 +192,13 @@ python3 tools/plot_results.py
 python3 tools/locality_stats.py data/snap/*.csr
 ```
 
-`plot_results.py` turns `results/bench.csv` into the speed-up figure, one
-panel per graph, written to `relazione/figure/scalabilita.pdf` and `.png`;
-it also prints speed-up and efficiency per thread count.
+`plot_results.py` turns `results/bench.csv` into two figures, one panel per
+graph: speed-up in `relazione/figure/scalabilita.pdf` and parallel efficiency
+in `relazione/figure/efficienza.pdf` (each with a `.png`); it also prints
+speed-up and efficiency per thread count. To compare machines, give each its
+CSV: `--macchina Laptop results/bench.csv --macchina Server results/server.csv`
+draws one efficiency curve per machine, over the thread counts it measured,
+while the speed-up figure stays on the first.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
 the cache lines the gather touches per edge.
 
