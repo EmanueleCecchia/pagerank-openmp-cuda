@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genera le figure di scalabilità della relazione da results/bench.csv.
+"""Genera le figure di scalabilità della relazione dai CSV in results/<macchina>/.
 
 Produce in relazione/figure/ scalabilita.pdf (speed-up) ed efficienza.pdf
 (efficienza parallela, lo speed-up diviso per il numero di thread), vettoriali
@@ -11,18 +11,23 @@ Un pannello per grafo, con gli assi in comune: otto curve sovrapposte in un
 solo grafico si confonderebbero proprio fra 2 e 4 thread, dove si decide la
 lettura.  wiki-Vote e' escluso: i suoi tempi sono sotto il millisecondo.
 
-La figura dell'efficienza accetta piu' macchine, ciascuna con il suo CSV:
+Ogni macchina misurata ha la sua cartella, scritta da run_benchmarks.sh:
+results/machine1/bench.csv, results/machine2/bench.csv, ...  Senza argomenti
+le prende tutte, in ordine di numero, come "Macchina 1", "Macchina 2", ...
+Per sceglierle o rinominarle, una --machine per ciascuna (CSV o cartella):
 
-    python3 tools/plot_results.py --macchina Portatile results/bench.csv \\
-                                  --macchina Server results/server_bench.csv
+    python3 tools/plot_results.py --machine 4c/8t results/machine1 \\
+                                  --machine 12c/24t results/machine2
 
-Ogni macchina diventa una curva per pannello, sui thread che ha misurato:
-l'efficienza e' normalizzata sul numero di thread, e rende confrontabili
-macchine con un numero di core diverso.  Lo speed-up resta sulla prima.
+Ogni macchina diventa una curva per pannello della figura dell'efficienza, sui
+thread che ha misurato: l'efficienza e' normalizzata sul numero di thread, e
+rende confrontabili macchine con un numero di core diverso.  Lo speed-up resta
+sulla prima.
 """
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -42,8 +47,24 @@ STILI = [("#2a78d6", "o"), ("#eb6834", "s"), ("#1baf7a", "^"), ("#eda100", "D")]
 INK, INK2, GRID = "#1a1a1a", "#4a4a4a", "#d4d4d4"
 
 
+def macchine_misurate(risultati):
+    """Le cartelle results/<macchina>/ con un bench.csv, machine2 prima di machine10."""
+    cartelle = [d for d in risultati.iterdir() if (d / "bench.csv").is_file()]
+    cartelle.sort(key=lambda d: [int(t) if t.isdigit() else t
+                                 for t in re.split(r"(\d+)", d.name)])
+    return [(etichetta(d.name), d) for d in cartelle]
+
+
+def etichetta(cartella):
+    """machine2 -> "Macchina 2", come nella tabella degli ambienti; altrimenti il nome."""
+    m = re.fullmatch(r"machine(\d+)", cartella)
+    return f"Macchina {m[1]}" if m else cartella
+
+
 def carica(path):
     """Minimo per configurazione: l'attivita' di sistema puo' solo rallentare."""
+    if path.is_dir():
+        path = path / "bench.csv"
     best = {}
     with open(path) as fh:
         for r in csv.DictReader(fh):
@@ -161,8 +182,14 @@ def figura_efficienza(macchine, uscita):
                         textcoords="offset points", color=INK2,
                         fontsize=7, ha="center", va="bottom")
     if len(macchine) > 1:
-        fig.legend(*assi[0, 0].get_legend_handles_labels(), loc="outside upper center",
-                   ncols=len(macchine), frameon=False, fontsize=8)
+        # da tutti i pannelli: una macchina puo' non aver misurato ogni grafo
+        voci = {}
+        for ax in assi.flat:
+            for curva, nome in zip(*ax.get_legend_handles_labels()):
+                voci.setdefault(nome, curva)
+        nomi = [nome for nome, _ in macchine if nome in voci]
+        fig.legend([voci[n] for n in nomi], nomi, loc="outside upper center",
+                   ncols=len(nomi), frameon=False, fontsize=8)
     fig.supxlabel("Thread OpenMP", fontsize=8.5)
     fig.supylabel("Efficienza parallela", fontsize=8.5)
     salva(fig, uscita, "efficienza")
@@ -172,16 +199,23 @@ def figura_efficienza(macchine, uscita):
 def main(argv=None):
     radice = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--macchina", nargs=2, action="append",
-                        metavar=("NOME", "CSV"),
-                        help="una macchina da mettere nella figura dell'efficienza; "
-                             "ripetibile, la prima da' anche lo speed-up "
-                             "(default: results/bench.csv)")
+    parser.add_argument("--machine", nargs=2, action="append",
+                        metavar=("NAME", "CSV"),
+                        help="una macchina da mettere nella figura dell'efficienza, "
+                             "il suo bench.csv o la sua cartella; ripetibile, la "
+                             "prima da' anche lo speed-up (default: tutte le "
+                             "results/<macchina>/bench.csv)")
     args = parser.parse_args(argv)
-    if len(args.macchina or []) > len(STILI):
-        parser.error(f"al piu' {len(STILI)} macchine")
 
-    elenco = args.macchina or [("Macchina 1", radice / "results" / "bench.csv")]
+    if args.machine:
+        elenco = [(nome, Path(path)) for nome, path in args.machine]
+    else:
+        elenco = macchine_misurate(radice / "results")
+        if not elenco:
+            parser.error("nessun results/<macchina>/bench.csv: "
+                         "lanciare prima MACHINE=... tools/run_benchmarks.sh")
+    if len(elenco) > len(STILI):
+        parser.error(f"al piu' {len(STILI)} macchine, sceglierle con --machine")
     macchine = [(nome, carica(path)) for nome, path in elenco]
     uscita = radice / "relazione" / "figure"
     uscita.mkdir(parents=True, exist_ok=True)
@@ -199,6 +233,8 @@ def main(argv=None):
         print(f"\n{etichetta}")
         for nome in GRAFI:
             threads = threads_misurati(best, nome)
+            if not threads:
+                continue
             sp = speedup(best, nome, threads)
             print(f"  {nome:<18} speed-up "
                   + " ".join(f"{p}t={s:.2f}x" for p, s in zip(threads, sp))

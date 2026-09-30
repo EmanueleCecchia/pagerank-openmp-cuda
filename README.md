@@ -169,20 +169,24 @@ the form to use on the larger graphs.
 ## Reproducing the experiments
 
 ```bash
-tools/run_benchmarks.sh
+MACHINE=machine2 tools/run_benchmarks.sh
 ```
 
-Runs every graph against the sequential, OpenMP (1/2/4/8 threads) and float
-builds, three repetitions each, and writes:
+Every machine the experiments run on gets its own folder, named by `MACHINE`.
+The sweep runs every graph against
+the sequential, OpenMP and float builds, three repetitions each, and writes:
 
-- `results/bench.csv` — one row per run;
-- `results/<graph>.ranks.txt` — the rank vectors (gitignored).
+- `results/<machine>/bench.csv` — one row per run;
+- `results/<machine>/<graph>.ranks.txt` — the rank vectors (gitignored).
 
+The OpenMP thread counts follow the CPU: the powers of two up to the logical
+CPUs, plus the physical cores and the logical CPUs themselves (ex. 1/2/4/8 on the
+4-core/8-thread machine).
 Settings can be overridden from the environment — `GRAPHS`, `THREADS`,
 `REPS`, `DATA`, `OUT`:
 
 ```bash
-GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
+MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
 ```
 
 The two analysis tools read what the sweep produced:
@@ -192,13 +196,10 @@ python3 tools/plot_results.py
 python3 tools/locality_stats.py data/snap/*.csr
 ```
 
-`plot_results.py` turns `results/bench.csv` into two figures, one panel per
-graph: speed-up in `relazione/figure/scalabilita.pdf` and parallel efficiency
-in `relazione/figure/efficienza.pdf` (each with a `.png`); it also prints
-speed-up and efficiency per thread count. To compare machines, give each its
-CSV: `--macchina Laptop results/bench.csv --macchina Server results/server.csv`
-draws one efficiency curve per machine, over the thread counts it measured,
-while the speed-up figure stays on the first.
+`plot_results.py` turns the `results/<machine>/bench.csv` files into two figures: 
+speed-up and parallel efficiency in `relazione/figure/`;
+To pick or rename them, give one `--machine` per machine, with its folder or CSV:
+`--machine "Laptop 4c/8t" results/machine1 --machine "Desktop 12c/24t" results/machine2`.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
 the cache lines the gather touches: their count, per edge and per line, and
 the MiB one iteration asks for.
@@ -210,6 +211,7 @@ the MiB one iteration asks for.
 - `tools/` — Python and shell helpers: conversion, verification, benchmark
   sweep, figures, locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF
-- `results/` — `bench.csv` with every run; the rank vectors are gitignored
+- `results/` — one folder per machine, with `bench.csv` (every run) and the
+  gitignored rank vectors;
 - `data/` — the datasets (gitignored)
 - `build/` — the executables (gitignored)
