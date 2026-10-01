@@ -76,9 +76,10 @@ thread. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
 implementazioni indipendenti. Le misure sulla versione OpenMP, condotte su
-nove grafi reali, mostrano uno
-speed-up di $2{,}6$--$3{,}5\times$ e, soprattutto, una
-saturazione oltre i 4 thread che identifica il calcolo come
+nove grafi reali e due processori, mostrano uno
+speed-up di $2{,}6$--$3{,}5\times$ su 4 core e di $6{,}9$--$11{,}9\times$ su 12
+e, soprattutto, una
+saturazione oltre il numero di core fisici che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
 
@@ -705,7 +706,9 @@ direttive OpenMP sono ignorate dal compilatore quando non gli si passa
 esistere così duplicazione di codice che possa divergere,
 il riferimento sequenziale è \emph{onesto}: misurando la versione parallela
 limitata a un thread si otterrebbe un tempo peggiore
-(Tabella~\ref{tab:scaling}, colonna \emph{1 thr}, sette grafi su otto), perché si pagherebbe
+(Tabella~\ref{tab:scaling} e Tabella~\ref{tab:scaling3}, colonna
+a un thread, sette grafi su
+otto su entrambe le macchine), perché si pagherebbe
 comunque la creazione del team di thread: usarla come riferimento
 gonfierebbe silenziosamente ogni speed-up dichiarato.
 
@@ -915,7 +918,10 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 \end{tabular}
 \end{center}
 
-\daFare{Utilizzare anche altre macchine}
+\stacco
+La versione OpenMP è stata misurata sulla Macchina 1 e sulla
+Macchina 3. La seconda ha il triplo
+dei core fisici e una L3 di 21~MiB anziché 8.
 
 \subsection{Istanze di prova}
 Sono stati usati nove grafi reali della collezione
@@ -962,7 +968,9 @@ località si osserva su due casi per parte, e non su uno solo.
 
 \stacco
 Le quattro istanze maggiori, da 16,5 a 69 milioni di archi, hanno tutte un
-vettore \texttt{contrib} in doppia precisione più grande della cache L3, e ciascuna ha una sua
+vettore \texttt{contrib} in doppia precisione più grande della cache
+L3 della Macchina 1, e due anche di quella della Macchina 3
+(Tabella~\ref{tab:localita}). Ciascuna ha poi una sua
 particolarità: \texttt{cit-Patents} non ha hub (nessun brevetto è citato più
 di 779 volte) e ha le righe più corte, 4,4 predecessori in media;
 \texttt{wiki-topcats} ha l'hub più estremo, con 238\,040 predecessori, e
@@ -997,7 +1005,8 @@ Lo scarto contro NetworkX riportato in tabella è quello di
 resta sotto $6{,}5\cdot10^{-11}$. In ogni caso è ben al di sotto della soglia di
 $10^{-8}$ usata dallo strumento di verifica.
 \stacco
-In tutte le 162 esecuzioni registrate in \texttt{results/machine1/bench.csv} la somma dei
+In tutte le 405 esecuzioni registrate nei \texttt{bench.csv} delle Macchine 1
+e 3 la somma dei
 rank si discosta da 1 per non più di $1{,}4\cdot10^{-11}$ in doppia precisione
 e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
 
