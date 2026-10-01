@@ -17,16 +17,19 @@ le prende tutte, in ordine di numero, come "Macchina 1", "Macchina 2", ...
 Per sceglierle o rinominarle, una --machine per ciascuna (CSV o cartella):
 
     python3 tools/plot_results.py --machine 4c/8t results/machine1 \\
-                                  --machine 12c/24t results/machine2
+                                  --machine 12c/24t results/machine3
 
-Ogni macchina diventa una curva per pannello della figura dell'efficienza, sui
-thread che ha misurato: l'efficienza e' normalizzata sul numero di thread, e
-rende confrontabili macchine con un numero di core diverso.  Lo speed-up resta
-sulla prima.
+Ogni macchina diventa una curva per pannello in entrambe le figure, sui thread
+che ha misurato.  Lo speed-up sta su assi logaritmici, perche' quello di una
+macchina a 4 core resti leggibile accanto a quello di una a 12; l'efficienza e'
+normalizzata sul numero di thread, e rende confrontabili macchine con un
+numero di core diverso.  Nella figura dello speed-up una linea punteggiata per
+macchina segna dove finiscono i core fisici.
 """
 
 import argparse
 import csv
+import math
 import re
 import sys
 from pathlib import Path
@@ -40,11 +43,11 @@ GRAFI = [
     "web-NotreDame", "web-Stanford", "web-Google", "web-BerkStan",
     "cit-Patents", "wiki-topcats", "soc-Pokec", "soc-LiveJournal1",
 ]
-THREADS = [1, 2, 4, 8]
 # Una macchina per colore, nell'ordine fisso della palette, e per simbolo:
 # le curve restano distinguibili anche stampate in bianco e nero.
 STILI = [("#2a78d6", "o"), ("#eb6834", "s"), ("#1baf7a", "^"), ("#eda100", "D")]
 INK, INK2, GRID = "#1a1a1a", "#4a4a4a", "#d4d4d4"
+PUNTINI = (0, (1, 2))   # tratto delle linee dei core fisici
 
 
 def macchine_misurate(risultati):
@@ -113,37 +116,79 @@ def salva(fig, uscita, nome):
     print(f"scritto {uscita / (nome + '.pdf')} e .png")
 
 
-def figura_speedup(best, uscita):
+def voci_macchine(assi, macchine):
+    """Una voce di legenda per macchina, raccolta da tutti i pannelli: una
+    macchina puo' non aver misurato ogni grafo."""
+    voci = {}
+    for ax in assi.flat:
+        for curva, nome in zip(*ax.get_legend_handles_labels()):
+            voci.setdefault(nome, curva)
+    nomi = [nome for nome, _ in macchine if nome in voci]
+    return [voci[n] for n in nomi], nomi
+
+
+def figura_speedup(macchine, uscita):
     fig, assi = plt.subplots(2, 4, figsize=(7.2, 3.9), sharex=True, sharey=True,
                              layout="constrained")
+    tutti = sorted({p for _, best in macchine for nome in GRAFI
+                    for p in threads_misurati(best, nome)})
 
     for ax, nome in zip(assi.flat, GRAFI):
-        prepara(ax, THREADS, nome)
-        ax.set_ylim(0, 4.6)
-        ax.set_yticks([0, 1, 2, 3, 4])
+        prepara(ax, tutti, nome)
+        # log-log: la retta ideale diventa la diagonale, e la distanza da essa
+        # e' l'efficienza, la stessa per una macchina a 4 core e per una a 12
+        ax.set_yscale("log", base=2)
+        ax.set_ylim(0.8, 30)
+        ax.set_yticks([1, 2, 4, 8, 16])
+        ax.set_yticklabels(["1", "2", "4", "8", "16"])
+        ax.minorticks_off()
 
         # riferimento ideale: linea sottile, tratteggiata, chiaramente non un dato
-        ax.plot(THREADS, THREADS, "--", color=INK2, linewidth=0.9,
+        ax.plot(tutti, tutti, "--", color=INK2, linewidth=0.9,
                 dashes=(4, 3), zorder=1)
 
-        sp = speedup(best, nome, THREADS)
-        colore, simbolo = STILI[0]
-        ax.plot(THREADS, sp, "-" + simbolo, color=colore, linewidth=1.8,
-                markersize=4.5, markeredgecolor="white",
-                markeredgewidth=0.8, zorder=3)
+        for (etichetta, best), (colore, simbolo) in zip(macchine, STILI):
+            threads = threads_misurati(best, nome)
+            if not threads or (nome, "seq", "double", 1) not in best:
+                continue
+            # i core fisici, dove cade il ginocchio della curva.  Il CSV non li
+            # registra: sono la meta' dei thread logici, cioe' del massimo
+            # misurato, con due thread per core come su tutte le macchine usate.
+            ax.axvline(threads[-1] // 2, color=colore, linewidth=0.9,
+                       linestyle=PUNTINI, zorder=1)
+            sp = speedup(best, nome, threads)
+            ax.plot(threads, sp, "-" + simbolo, color=colore, linewidth=1.8,
+                    markersize=4.5, markeredgecolor="white",
+                    markeredgewidth=0.8, zorder=3, label=etichetta)
 
-        # un'etichetta sola per pannello: il massimo, che e' il dato riportato nel testo.
-        # Dal lato dove la curva non passa: sull'ultimo punto sopra e allineata a
-        # destra, per non uscire dal pannello; altrove sotto, lontano dalla linea ideale.
-        i = max(range(len(sp)), key=sp.__getitem__)
-        ultimo = i == len(THREADS) - 1
-        ax.annotate(f"{virgola(sp[i])}×", xy=(THREADS[i], sp[i]),
-                    xytext=(4, 6) if ultimo else (0, -12), textcoords="offset points",
-                    ha="right" if ultimo else "center", color=INK, fontsize=7.2)
+            # un'etichetta per curva: il massimo, che e' il dato riportato nel
+            # testo, sotto il punto, lontano dalla linea ideale.  Sull'ultimo
+            # punto del pannello la curva arriva quasi piatta da sinistra:
+            # l'etichetta scende di piu' per non toccarla, e un fondo bianco
+            # interrompe la linea dei core fisici che la attraversa.
+            i = max(range(len(sp)), key=sp.__getitem__)
+            ultimo = threads[i] == tutti[-1]
+            ax.annotate(f"{virgola(sp[i])}×", xy=(threads[i], sp[i]),
+                        xytext=(3, -21) if ultimo else (0, -12),
+                        textcoords="offset points",
+                        ha="right" if ultimo else "center",
+                        color=INK, fontsize=7.2, zorder=4,
+                        bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="none"))
 
-    assi[0, 0].annotate("ideale", xy=(2.6, 2.6), xytext=(-3, 4),
-                        textcoords="offset points", color=INK2,
-                        fontsize=7, rotation=40, ha="center")
+    # "ideale" parallela alla diagonale: l'angolo sullo schermo dipende dalle
+    # proporzioni del pannello, note solo a figura disegnata
+    fig.canvas.draw()
+    (x1, y1), (x2, y2) = assi[0, 0].transData.transform([(2, 2), (4, 4)])
+    assi[0, 0].annotate("ideale", xy=(2.8, 2.8), xytext=(-3, 4),
+                        textcoords="offset points", color=INK2, fontsize=7,
+                        rotation=math.degrees(math.atan2(y2 - y1, x2 - x1)),
+                        rotation_mode="anchor", ha="center")
+
+    curve, nomi = voci_macchine(assi, macchine)
+    curve.append(plt.Line2D([], [], color=INK2, linewidth=0.9, linestyle=PUNTINI))
+    nomi.append("core fisici")
+    fig.legend(curve, nomi, loc="outside upper center", ncols=len(nomi),
+               frameon=False, fontsize=8)
     fig.supxlabel("Thread OpenMP", fontsize=8.5)
     fig.supylabel("Speed-up rispetto al sequenziale", fontsize=8.5)
     salva(fig, uscita, "scalabilita")
@@ -182,13 +227,8 @@ def figura_efficienza(macchine, uscita):
                         textcoords="offset points", color=INK2,
                         fontsize=7, ha="center", va="bottom")
     if len(macchine) > 1:
-        # da tutti i pannelli: una macchina puo' non aver misurato ogni grafo
-        voci = {}
-        for ax in assi.flat:
-            for curva, nome in zip(*ax.get_legend_handles_labels()):
-                voci.setdefault(nome, curva)
-        nomi = [nome for nome, _ in macchine if nome in voci]
-        fig.legend([voci[n] for n in nomi], nomi, loc="outside upper center",
+        curve, nomi = voci_macchine(assi, macchine)
+        fig.legend(curve, nomi, loc="outside upper center",
                    ncols=len(nomi), frameon=False, fontsize=8)
     fig.supxlabel("Thread OpenMP", fontsize=8.5)
     fig.supylabel("Efficienza parallela", fontsize=8.5)
@@ -201,10 +241,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--machine", nargs=2, action="append",
                         metavar=("NAME", "CSV"),
-                        help="una macchina da mettere nella figura dell'efficienza, "
-                             "il suo bench.csv o la sua cartella; ripetibile, la "
-                             "prima da' anche lo speed-up (default: tutte le "
-                             "results/<macchina>/bench.csv)")
+                        help="una macchina da mettere nelle figure, il suo "
+                             "bench.csv o la sua cartella; ripetibile (default: "
+                             "tutte le results/<macchina>/bench.csv)")
     args = parser.parse_args(argv)
 
     if args.machine:
@@ -226,7 +265,7 @@ def main(argv=None):
         "xtick.color": INK2, "ytick.color": INK2,
         "text.color": INK, "axes.labelcolor": INK,
     })
-    figura_speedup(macchine[0][1], uscita)
+    figura_speedup(macchine, uscita)
     figura_efficienza(macchine, uscita)
 
     for etichetta, best in macchine:

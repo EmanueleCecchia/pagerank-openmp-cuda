@@ -196,10 +196,11 @@ python3 tools/plot_results.py
 python3 tools/locality_stats.py data/snap/*.csr
 ```
 
-`plot_results.py` turns the `results/<machine>/bench.csv` files into two figures: 
-speed-up and parallel efficiency in `relazione/figure/`;
+`plot_results.py` turns the `results/<machine>/bench.csv` files into two figures,
+speed-up and parallel efficiency, in `relazione/figure/`, with one curve per
+machine in each.
 To pick or rename them, give one `--machine` per machine, with its folder or CSV:
-`--machine "Laptop 4c/8t" results/machine1 --machine "Desktop 12c/24t" results/machine2`.
+`--machine "Laptop 4c/8t" results/machine1 --machine "Workstation 12c/24t" results/machine3`.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
 the cache lines the gather touches: their count, per edge and per line, and
 the MiB one iteration asks for.
