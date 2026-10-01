@@ -64,9 +64,9 @@ __pycache__/
 # Build output
 build/
 
-# Experiment output, one folder per machine: 
-# the rank vectors are far too large to version 
-results/*/*.ranks.txt
+# Experiment output, one folder per machine:
+# the rank vectors are far too large to version.
+results/**/*.ranks.txt
 
 # LaTeX auxiliary files (the .tex and the built .pdf are kept)
 *.aux
