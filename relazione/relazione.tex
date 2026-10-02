@@ -1121,8 +1121,33 @@ Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
 non le unità che le servono. Il \emph{simultaneous multithreading}  (SMT) rende quando un thread calcola
 mentre l'altro aspetta, ma qui aspettano entrambi.
 
+\paragraph{Con più core fisici.}
+Se il limite sono le unità di accesso alla memoria di ciascun core, a
+spostarlo deve essere il numero di core fisici, non quello dei thread. La
+Macchina 3, con 12 core fisici e 24 thread logici, lo conferma
+(Tabella~\ref{tab:scaling3} e Figura~\ref{fig:scalabilita}).
+Finché ogni thread nuovo trova un core libero lo speed-up continua a
+crescere: a 8 thread l'efficienza è ancora del 66--86\,\%, contro il
+32--44\,\% della Macchina 1, e a 12 del 54--79\,\%, poco sotto il 62--82\,\%
+che la Macchina 1 ha a 4, quando anche lì ogni core ha il suo thread. Oltre i
+12 thread osserviamo lo stesso fenomeno della Macchina 1, con lo speed-up che
+cresce più lentamente e l'efficienza che cala più rapidamente.
+La curva si piega fortemente, dunque, in corrispondenza della fine dei core fisici.
+
+\stacco
+Anche per la Macchina 3 la resa di SMT segue la memoria. Il
+guadagno da 12 a 24 thread è massimo nei grafi minori, come
+\texttt{web-NotreDame} e \texttt{web-Stanford}, che sono gli unici due grafi i cui
+dati --- il CSR e i tre vettori \texttt{cur}, \texttt{nxt} e
+\texttt{contrib} --- stanno per intero nei 21~MiB della
+L3.\footnote{\texttt{web-NotreDame}: 9,4 MiB di CSR più tre vettori
+da 2,5 MiB, 16,9 MiB in tutto; \texttt{web-Stanford}: 12,0 MiB più tre
+vettori da 2,2 MiB, circa 18,5 MiB.}
+In sostanza, il thread gemello rende quando l'attesa è breve, come
+quando i dati arrivano dalla cache, e poco quando arrivano dalla memoria.
+
 \paragraph{\texttt{web-Google} impiega più tempo di \texttt{web-BerkStan}.}
-A 4 thread \texttt{web-Google} impiega $0{,}377$~s contro i $0{,}216$~s di \texttt{web-BerkStan}, il $74\,\%$
+A 4 thread e sulla Macchina 1 \texttt{web-Google} impiega $0{,}377$~s contro i $0{,}216$~s di \texttt{web-BerkStan}, il $74\,\%$
 in più, e non è una questione di iterazioni perché ne esegue di meno (62 contro 64).
 Non è nemmeno una questione di lavoro
 svolto, perché \texttt{web-BerkStan} ha il $49\,\%$ di archi in più: a parità di
