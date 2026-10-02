@@ -23,8 +23,8 @@ Ogni macchina diventa una curva per pannello in entrambe le figure, sui thread
 che ha misurato.  Lo speed-up sta su assi logaritmici, perche' quello di una
 macchina a 4 core resti leggibile accanto a quello di una a 12; l'efficienza e'
 normalizzata sul numero di thread, e rende confrontabili macchine con un
-numero di core diverso.  Nella figura dello speed-up una linea punteggiata per
-macchina segna dove finiscono i core fisici.
+numero di core diverso.  In tutte e due una linea punteggiata per macchina
+segna dove finiscono i core fisici.
 """
 
 import argparse
@@ -116,15 +116,28 @@ def salva(fig, uscita, nome):
     print(f"scritto {uscita / (nome + '.pdf')} e .png")
 
 
-def voci_macchine(assi, macchine):
-    """Una voce di legenda per macchina, raccolta da tutti i pannelli: una
-    macchina puo' non aver misurato ogni grafo."""
+def segna_core_fisici(ax, threads, colore):
+    """Linea punteggiata dove finiscono i core fisici, e cade il ginocchio
+    della curva.  Il CSV non li registra: sono la meta' dei thread logici,
+    cioe' del massimo misurato, con due thread per core come su tutte le
+    macchine usate."""
+    ax.axvline(threads[-1] // 2, color=colore, linewidth=0.9,
+               linestyle=PUNTINI, zorder=1)
+
+
+def legenda(fig, assi, macchine):
+    """Una voce per macchina, raccolta da tutti i pannelli perche' una macchina
+    puo' non aver misurato ogni grafo, piu' quella dei core fisici."""
     voci = {}
     for ax in assi.flat:
         for curva, nome in zip(*ax.get_legend_handles_labels()):
             voci.setdefault(nome, curva)
     nomi = [nome for nome, _ in macchine if nome in voci]
-    return [voci[n] for n in nomi], nomi
+    curve = [voci[n] for n in nomi]
+    curve.append(plt.Line2D([], [], color=INK2, linewidth=0.9, linestyle=PUNTINI))
+    nomi.append("core fisici")
+    fig.legend(curve, nomi, loc="outside upper center", ncols=len(nomi),
+               frameon=False, fontsize=8)
 
 
 def figura_speedup(macchine, uscita):
@@ -151,11 +164,7 @@ def figura_speedup(macchine, uscita):
             threads = threads_misurati(best, nome)
             if not threads or (nome, "seq", "double", 1) not in best:
                 continue
-            # i core fisici, dove cade il ginocchio della curva.  Il CSV non li
-            # registra: sono la meta' dei thread logici, cioe' del massimo
-            # misurato, con due thread per core come su tutte le macchine usate.
-            ax.axvline(threads[-1] // 2, color=colore, linewidth=0.9,
-                       linestyle=PUNTINI, zorder=1)
+            segna_core_fisici(ax, threads, colore)
             sp = speedup(best, nome, threads)
             ax.plot(threads, sp, "-" + simbolo, color=colore, linewidth=1.8,
                     markersize=4.5, markeredgecolor="white",
@@ -184,11 +193,7 @@ def figura_speedup(macchine, uscita):
                         rotation=math.degrees(math.atan2(y2 - y1, x2 - x1)),
                         rotation_mode="anchor", ha="center")
 
-    curve, nomi = voci_macchine(assi, macchine)
-    curve.append(plt.Line2D([], [], color=INK2, linewidth=0.9, linestyle=PUNTINI))
-    nomi.append("core fisici")
-    fig.legend(curve, nomi, loc="outside upper center", ncols=len(nomi),
-               frameon=False, fontsize=8)
+    legenda(fig, assi, macchine)
     fig.supxlabel("Thread OpenMP", fontsize=8.5)
     fig.supylabel("Speed-up rispetto al sequenziale", fontsize=8.5)
     salva(fig, uscita, "scalabilita")
@@ -213,6 +218,7 @@ def figura_efficienza(macchine, uscita):
             threads = threads_misurati(best, nome)
             if not threads or (nome, "seq", "double", 1) not in best:
                 continue
+            segna_core_fisici(ax, threads, colore)
             ef = [s / p for s, p in zip(speedup(best, nome, threads), threads)]
             ax.plot(threads, ef, "-" + simbolo, color=colore, linewidth=1.8,
                     markersize=4.5, markeredgecolor="white",
@@ -223,13 +229,11 @@ def figura_efficienza(macchine, uscita):
                         xytext=(4, -12), textcoords="offset points",
                         ha="right", color=INK, fontsize=7.2)
 
-    assi[0, 0].annotate("ideale", xy=(5.66, 1), xytext=(0, 3),
+    # fra 2 e 4 thread, dove non passa nessuna linea dei core fisici
+    assi[0, 0].annotate("ideale", xy=(2 ** 1.5, 1), xytext=(0, 3),
                         textcoords="offset points", color=INK2,
                         fontsize=7, ha="center", va="bottom")
-    if len(macchine) > 1:
-        curve, nomi = voci_macchine(assi, macchine)
-        fig.legend(curve, nomi, loc="outside upper center",
-                   ncols=len(nomi), frameon=False, fontsize=8)
+    legenda(fig, assi, macchine)
     fig.supxlabel("Thread OpenMP", fontsize=8.5)
     fig.supylabel("Efficienza parallela", fontsize=8.5)
     salva(fig, uscita, "efficienza")

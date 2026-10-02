@@ -1028,8 +1028,9 @@ dove $T_{\mathrm{seq}}$ è il tempo della build sequenziale (compilata senza
 
 \begin{table}[h]
 \centering
-\caption{Tempi di esecuzione in secondi. Lo speed-up dell'ultima colonna è
-calcolato sulla configurazione in doppia precisione più veloce.}
+\caption{Tempi di esecuzione in secondi sulla Macchina 1 (4 core
+fisici, 8 thread). Lo speed-up dell'ultima colonna è
+calcolato tra la configurazione in doppia precisione più veloce e quella sequenziale.}
 \label{tab:scaling}
 \begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
@@ -1048,15 +1049,44 @@ soc-LiveJournal1 & 11,198 & 11,461 & 6,575 & 4,449 & 4,229 & 3,234 & $2{,}65\tim
 \end{tabular}
 \end{table}
 
+\begin{table}[h]
+\centering
+\caption{Tempi di esecuzione in secondi sulla Macchina 3 (12 core fisici,
+24 thread). Lo speed-up è calcolato come nella Tabella~\ref{tab:scaling}.}
+\label{tab:scaling3}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrrrrrr@{}}
+\toprule
+ & & \multicolumn{7}{c}{\textbf{thread}} & & \\
+\cmidrule(lr){3-9}
+\textbf{Grafo} & \textbf{seq} & \textbf{1} & \textbf{2} & \textbf{4} &
+\textbf{8} & \textbf{12} & \textbf{16} & \textbf{24} & \textbf{float 24} &
+\textbf{speed-up} \\
+\midrule
+web-NotreDame    & 0,142 & 0,144 & 0,085 & 0,045 & 0,025 & 0,018 & 0,016 & 0,014 & 0,014 & $10{,}51\times$ \\
+web-Stanford     & 0,334 & 0,338 & 0,172 & 0,090 & 0,048 & 0,035 & 0,032 & 0,028 & 0,021 & $11{,}88\times$ \\
+web-Google       & 1,081 & 1,119 & 0,573 & 0,292 & 0,158 & 0,117 & 0,108 & 0,099 & 0,079 & $10{,}90\times$ \\
+web-BerkStan     & 0,683 & 0,695 & 0,421 & 0,215 & 0,126 & 0,093 & 0,085 & 0,083 & 0,063 & $8{,}20\times$ \\
+cit-Patents      & 0,979 & 0,988 & 0,538 & 0,288 & 0,176 & 0,140 & 0,137 & 0,128 & 0,096 & $7{,}68\times$ \\
+wiki-topcats     & 1,936 & 1,775 & 0,998 & 0,525 & 0,310 & 0,239 & 0,236 & 0,227 & 0,183 & $8{,}54\times$ \\
+soc-Pokec        & 2,728 & 2,737 & 1,491 & 0,789 & 0,447 & 0,351 & 0,332 & 0,320 & 0,262 & $8{,}51\times$ \\
+soc-LiveJournal1 & 8,081 & 8,296 & 4,554 & 2,489 & 1,540 & 1,259 & 1,236 & 1,178 & 0,810 & $6{,}86\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{figure/scalabilita.pdf}
-\caption{Scalabilità della versione OpenMP, un pannello per grafo. Il
-riferimento per lo speed-up è la build sequenziale. La linea tratteggiata
-indica lo speed-up lineare ideale $S(p) = p$, la linea blu quello misurato,
-con il massimo raggiunto in etichetta.
+\caption{Scalabilità della versione OpenMP, un pannello per grafo e una
+curva per macchina, su assi logaritmici. Il
+riferimento per lo speed-up è la build sequenziale di ciascuna macchina. La linea tratteggiata
+diagonale indica lo speed-up lineare ideale $S(p) = p$, le linee continue quelli misurati,
+con il massimo raggiunto in etichetta; le linee punteggiate verticali segnano i
+core fisici di ciascuna macchina, 4 e 12.
 Figura generata da \texttt{tools/plot\_results.py} a partire
-da \texttt{results/machine1/bench.csv}.}
+da \texttt{results/machine1/bench.csv} e \texttt{results/machine3/bench.csv}.}
 \label{fig:scalabilita}
 \end{figure}
 
@@ -1064,16 +1094,18 @@ da \texttt{results/machine1/bench.csv}.}
 \centering
 \includegraphics[width=\linewidth]{figure/efficienza.pdf}
 \caption{Efficienza parallela della versione OpenMP, un
-pannello per grafo. La linea tratteggiata indica l'efficienza ideale del
-100\,\%, la linea blu quella misurata, con in etichetta il valore al massimo
-numero di thread. Figura generata da
-\texttt{tools/plot\_results.py} a partire da \texttt{results/machine1/bench.csv}.}
+pannello per grafo e una curva per macchina. La linea tratteggiata indica l'efficienza ideale del
+100\,\%, le linee continue quelle misurate, con in etichetta il valore al massimo
+numero di thread; le linee punteggiate verticali segnano i core fisici, come nella
+Figura~\ref{fig:scalabilita}. Figura generata da
+\texttt{tools/plot\_results.py} a partire da
+\texttt{results/machine1/bench.csv} e \texttt{results/machine3/bench.csv}.}
 \label{fig:efficienza}
 \end{figure}
 
 \stacco
-La Figura~\ref{fig:scalabilita} mostra che
-le otto curve si appiattiscono fra 4 e 8 thread, e quasi tutte si allontanano
+Nella Figura~\ref{fig:scalabilita} le otto curve della Macchina 1
+si appiattiscono fra 4 e 8 thread, e quasi tutte si allontanano
 dall'andamento lineare già a 2: fa eccezione \texttt{web-Stanford}, che a 2
 thread ha ancora un'efficienza del 98\,\%. 
 L'efficienza (Figura~\ref{fig:efficienza}) è dell'82--98\,\% a 2
@@ -1081,7 +1113,7 @@ thread, del 62--82\,\% a 4 e del 32--44\,\% a 8.
 
 \paragraph{Il calcolo è memory-bound.}
 Passando da 4 a 8 thread il tempo, anziché dimezzarsi, scende al più
-dell'11\,\% (\texttt{web-BerkStan}), e su \texttt{soc-Pokec} resta invariato. Il processore
+dell'11\,\% (\texttt{web-BerkStan}), e su \texttt{soc-Pokec} resta invariato. Il processore della Macchina 1
 possiede 4 core fisici presentati come 8 thread logici; i due thread che
 stanno sullo stesso core condividono anche cache e unità di accesso alla memoria. 
 Poiché ogni thread passa la maggior parte del tempo in attesa della lettura
