@@ -1221,6 +1221,18 @@ e costa meno ($1{,}04$ contro $1{,}26$~ns); \texttt{soc-LiveJournal1}, a sua
 volta, nonostante una località migliore di quella di \texttt{web-Google}, paga
 per arco un po' di più.
 
+
+\stacco
+La Macchina 3 conferma questa lettura dal lato dell'hardware (colonne
+M1 e M3 della Tabella~\ref{tab:localita}). Il suo core non è più veloce: da
+sequenziale, sui quattro grafi web, le due CPU si equivalgono entro il
+6\,\%. Ha però una L3 di 21~MiB anziché 8, e a 4 thread il suo vantaggio è
+modesto sui quattro grafi web, il cui \texttt{contrib} sta già nella L3 della
+Macchina 1, e forte sulle quattro
+istanze maggiori, il cui \texttt{contrib} non ci sta.
+Ciò che la Macchina 3 ha in più sta dunque nella gerarchia di memoria,
+e rende proprio dove la Macchina 1 aspetta la RAM.
+
 \begin{table}[h]
 \centering
 \caption{Località della lettura sparsa su \texttt{contrib}. Il salto è la
@@ -1229,22 +1241,25 @@ linee di cache distinte sono contate su blocchi di 256 righe, che è l'unità di
 schedulazione del ciclo, e divise per il numero di archi danno le linee per
 arco; il gather per iterazione è il volume che ne risulta.
 Misure prodotte da \texttt{tools/locality\_stats.py} dai file \texttt{.csr};
-i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling}.}
+i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling} per
+la Macchina 1 (M1) e della Tabella~\ref{tab:scaling3} per la Macchina 3 (M3).}
 \label{tab:localita}
-\begin{tabular}{@{}lrrrrr@{}}
+\begin{tabular}{@{}lrrrrrr@{}}
 \toprule
 \textbf{Grafo} & \textbf{salto} & \textbf{linee} & \textbf{gather} &
-\textbf{\texttt{contrib}} & \textbf{ns per} \\
- & \textbf{mediano} & \textbf{per arco} & \textbf{per iter.} & & \textbf{arco} \\
+\textbf{\texttt{contrib}} & \multicolumn{2}{c}{\textbf{ns per arco}} \\
+\cmidrule(l){6-7}
+ & \textbf{mediano} & \textbf{per arco} & \textbf{per iter.} & &
+\textbf{M1} & \textbf{M3} \\
 \midrule
-web-NotreDame    & 1        & 0,07 & 7 MiB      & 2,5 MiB  & 0,62 \\
-web-Stanford     & 1\,080   & 0,91 & 129 MiB    & 2,2 MiB  & 0,68 \\
-web-Google       & 16\,836  & 0,99 & 309 MiB    & 6,7 MiB  & 1,19 \\
-web-BerkStan     & 1        & 0,06 & 29 MiB     & 5,2 MiB  & 0,44 \\
-cit-Patents      & 60\,903  & 0,96 & 973 MiB    & 28,8 MiB & 1,94 \\
-wiki-topcats     & 59       & 0,42 & 725 MiB    & 13,7 MiB & 0,79 \\
-soc-Pokec        & 10\,319  & 0,80 & 1\,501 MiB & 12,5 MiB & 1,04 \\
-soc-LiveJournal1 & 3\,104   & 0,52 & 2\,172 MiB & 37,0 MiB & 1,26 \\
+web-NotreDame    & 1        & 0,07 & 7 MiB      & 2,5 MiB  & 0,62 & 0,52 \\
+web-Stanford     & 1\,080   & 0,91 & 129 MiB    & 2,2 MiB  & 0,68 & 0,62 \\
+web-Google       & 16\,836  & 0,99 & 309 MiB    & 6,7 MiB  & 1,19 & 0,92 \\
+web-BerkStan     & 1        & 0,06 & 29 MiB     & 5,2 MiB  & 0,44 & 0,44 \\
+cit-Patents      & 60\,903  & 0,96 & 973 MiB    & 28,8 MiB & 1,94 & 1,16 \\
+wiki-topcats     & 59       & 0,42 & 725 MiB    & 13,7 MiB & 0,79 & 0,50 \\
+soc-Pokec        & 10\,319  & 0,80 & 1\,501 MiB & 12,5 MiB & 1,04 & 0,59 \\
+soc-LiveJournal1 & 3\,104   & 0,52 & 2\,172 MiB & 37,0 MiB & 1,26 & 0,71 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1268,7 +1283,7 @@ soc-LiveJournal1 & 3\,104   & 0,52 & 2\,172 MiB & 37,0 MiB & 1,26 \\
 \end{table}
 
 \subsection{Confronto fra le varianti \texttt{float} e \texttt{double}}
-A 8 thread e a parità di numero di iterazioni, la variante in singola
+Sulla Macchina 1, a 8 thread e a parità di numero di iterazioni, la variante in singola
 precisione riduce il tempo fra il $24$ e il $39\,\%$ sulle cinque istanze in
 cui \texttt{contrib}, in doppia precisione, occupa quasi tutta la L3 o la
 supera: \texttt{web-Google},
