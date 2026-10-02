@@ -1296,6 +1296,14 @@ Il guadagno si concentra dunque dove il gather va in memoria, ed è coerente
 con il dimezzamento dei byte trasferiti per ogni rank: un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
 
+\stacco
+Sulla Macchina 3, a 24 thread, il guadagno si allarga a sette grafi su
+otto, dal 18 al 31\,\%, e comprende \texttt{web-Stanford} e
+\texttt{web-BerkStan}, che sulla Macchina 1 guadagnavano poco o nulla.
+Resta nullo solo su \texttt{web-NotreDame}
+($-2\,\%$), il più piccolo degli otto grafi e quello con il gather per
+iterazione più leggero.
+
 Il limite della singola precisione si manifesta sulla soglia di
 convergenza: su \texttt{web-Google} l'errore $L_1$ non scende sotto
 $\approx 5\cdot10^{-9}$, per cui una tolleranza di $10^{-9}$ non viene mai
