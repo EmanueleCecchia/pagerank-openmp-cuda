@@ -26,16 +26,6 @@ static double wall_seconds(void)
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
-pagerank_params pagerank_default_params(void)
-{
-    pagerank_params p;
-
-    p.damping   = 0.85;
-    p.tolerance = 1e-6;
-    p.max_iters = 100;
-    return p;
-}
-
 int pagerank(const csr_graph *g, const pagerank_params *params,
              rank_t *rank, pagerank_stats *stats)
 {

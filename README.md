@@ -1,8 +1,8 @@
 # PageRank on Hybrid Architectures (OpenMP + CUDA)
 
-PageRank over large sparse graphs, in three versions built from one set of
-sources: a sequential baseline, a pure-OpenMP one, and a hybrid OpenMP+CUDA
-one (in development).
+PageRank over large sparse graphs, in four versions built from one set of
+sources: a sequential baseline, a pure-OpenMP one, a GPU-only CUDA one, and a
+hybrid OpenMP+CUDA one (in development).
 
 This file is the usage guide: how to build, get the data, run, check the
 results and reproduce the experiments. The problem, the design choices and
@@ -17,7 +17,7 @@ the measurements are in [`relazione/relazione.pdf`](relazione/relazione.pdf)
 | dataset conversion | Python 3, `numpy` |
 | correctness check | `networkx`, `scipy` |
 | figures | `matplotlib` |
-| hybrid version | CUDA Toolkit |
+| GPU versions | CUDA Toolkit (`nvcc`) |
 
 To create the conda environment:
 
@@ -32,16 +32,27 @@ conda activate pagerank
 make
 ```
 
-Produces four executables in `build/`, all from the same sources:
+Produces these executables in `build/`, all from the same sources; the two
+GPU ones only when `nvcc` is found, otherwise `make` builds the CPU ones alone:
 
 | Executable | Compiled with | Purpose |
 |---|---|---|
 | `pagerank_seq` | — | sequential baseline (OpenMP pragmas ignored) |
 | `pagerank_omp` | `-fopenmp` | parallel, double precision |
 | `pagerank_omp_float` | `-fopenmp -DPAGERANK_FLOAT` | parallel, single precision |
+| `pagerank_cuda` | `nvcc`, `-DPAGERANK_CUDA` | GPU only, double precision |
+| `pagerank_cuda_float` | `nvcc`, `-DPAGERANK_CUDA -DPAGERANK_FLOAT` | GPU only, single precision |
 | `csr_info` | — | statistics of a converted graph |
 
-`make clean` removes `build/`.
+The GPU code is compiled for the GPU of the machine running `make`. To build
+for another one, name its architecture, e.g. for an RTX 2080 Ti:
+
+```bash
+make CUDA_ARCH=-arch=sm_75
+```
+
+`make cuda` builds the GPU executables alone, and fails saying why when `nvcc`
+is missing. `make clean` removes `build/`.
 
 ## Datasets
 
@@ -113,19 +124,31 @@ degree extremes, row-length distribution:
 | `-k NUM` | how many top nodes to print | 10 |
 | `-o path/ranks.txt` | write every rank to that file | — |
 | `-c path/bench.csv` | append one CSV row of run details to that file | — |
+| `-b T,W` | GPU builds only: rows of up to T in-neighbours get a thread each, up to W a warp, longer ones a block | 16,256 |
 
-The thread count comes from `OMP_NUM_THREADS`.
+In the OpenMP builds the thread count comes from `OMP_NUM_THREADS`.
 Left unset, the run uses every available logical thread; set it to pick a specific number:
 
 ```bash
 OMP_NUM_THREADS=4 ./build/pagerank_omp data/snap/web-Google.csr
 ```
 
+The GPU builds run on the first visible GPU and print which one; on a machine
+with more than one, `CUDA_VISIBLE_DEVICES` picks it:
+
+```bash
+CUDA_VISIBLE_DEVICES=1 ./build/pagerank_cuda data/snap/web-Google.csr
+```
+
+A `-b` threshold T beyond the longest row gives every row its own thread,
+which is the naive kernel the classes are compared against:
+`-b 1000000,1000000`.
+
 ### Saving the results
 
 `-o` writes every rank, one node per line, after a header recording how
 the run was produced (build, precision, threads, iterations, timing, rank
-sum). Ranks are written in node order rather than sorted by rank, so that two
+sum; the GPU builds add the device and the `-b` classes). Ranks are written in node order rather than sorted by rank, so that two
 files line up line-by-line and can be diffed directly; values carry enough
 digits to round-trip exactly. To view them by rank instead:
 
@@ -155,7 +178,11 @@ Recomputes PageRank by routes sharing no code with the project and compares
 them against the C executable; exits non-zero on any mismatch, so it works as
 a regression test. `--no-dense` skips the dense N×N reference, which only fits
 in memory for the smallest graph, and checks against networkx alone: that is
-the form to use on the larger graphs.
+the form to use on the larger graphs. To check another build, name it:
+
+```bash
+python3 tools/verify_pagerank.py data/snap/wiki-Vote.txt --c-executable build/pagerank_cuda
+```
 
 | Option | Meaning | Default |
 |---|---|---|
@@ -207,8 +234,9 @@ the MiB one iteration asks for.
 
 ## Project structure
 
-- `src/` — C sources: `csr.*` (loader and validation), `pagerank.*` (the
-  timed kernel), `main.c` (driver), `csr_info.c` (graph statistics)
+- `src/` — C and CUDA sources: `csr.*` (loader and validation), `pagerank.*`
+  (the timed kernel), `pagerank_cuda.cu` (the same kernel on the GPU),
+  `main.c` (driver), `csr_info.c` (graph statistics)
 - `tools/` — Python and shell helpers: conversion, verification, benchmark
   sweep, figures, locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF

@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+/* The GPU build compiles its .cu file as C++: C linkage keeps these names
+ * the ones the C objects define and call. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Binary CSR graph, as written by tools/snap_to_csr.py.
  * The graph is stored transposed: row v holds the in-neighbours of v. */
 typedef struct {
@@ -25,5 +31,9 @@ void csr_free(csr_graph *g);
  * Returns a malloc'ed array of n_nodes entries for the caller to free,
  * or NULL after printing the reason to stderr. */
 uint64_t *csr_load_ids(const char *path, uint64_t n_nodes);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CSR_H */

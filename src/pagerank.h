@@ -1,7 +1,13 @@
 #ifndef PAGERANK_H
 #define PAGERANK_H
 
+#include <stddef.h>
+
 #include "csr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Precision of the rank and contribution vectors */
 #ifdef PAGERANK_FLOAT
@@ -20,6 +26,9 @@ typedef struct {
     double damping;     /* d in the PageRank formula, conventionally 0.85 */
     double tolerance;   /* stop once the L1 change falls below this */
     int    max_iters;   /* stops the loop if the tolerance is never reached */
+    /* GPU build only, ignored by the others: the granularity classes of the gather */
+    uint64_t thread_max;
+    uint64_t warp_max;
 } pagerank_params;
 
 typedef struct {
@@ -29,12 +38,35 @@ typedef struct {
     int    converged;   /* non-zero if the tolerance was reached */
 } pagerank_stats;
 
-pagerank_params pagerank_default_params(void);
+/* The CPU and the GPU build link different implementations of pagerank(),
+ * and both must start from the same defaults. */
+static inline pagerank_params pagerank_default_params(void)
+{
+    pagerank_params p;
+
+    p.damping   = 0.85;
+    p.tolerance = 1e-6;
+    p.max_iters = 100;
+    p.thread_max = 16;
+    p.warp_max   = 256;
+    return p;
+}
 
 /* Computes the PageRank of g into the rank array, which must have room for
  * g->n_nodes entries.  Returns 0 on success, -1 if working memory could not
- * be allocated.  stats may be NULL. */
+ * be allocated (on the GPU build, device memory too).  stats may be NULL. */
 int pagerank(const csr_graph *g, const pagerank_params *params,
              rank_t *rank, pagerank_stats *stats);
+
+#ifdef PAGERANK_CUDA
+/* Writes into buf a one-line description of the GPU that pagerank() will
+ * use: name, compute capability, multiprocessors and memory, all queried at
+ * run time.  Returns 0, or -1 if there is no usable device. */
+int pagerank_device(char *buf, size_t size);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PAGERANK_H */
