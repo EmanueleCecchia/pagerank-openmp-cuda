@@ -56,6 +56,26 @@ static void usage(const char *prog)
             , prog);
 }
 
+/* Checks that argv[i] is an option followed by its value.  An option is a
+ * dash and one letter: the switch in main() looks only at the letter, so
+ * without this "foo" would pass for -o and "-dx" for -d.
+ * Returns 0, or -1 after saying what is wrong. */
+static int check_option(int argc, char **argv, int i)
+{
+    const char *opt = argv[i];
+
+    if (opt[0] != '-' || opt[1] == '\0' || opt[2] != '\0') {
+        fprintf(stderr, "%s: unknown option\n", opt);
+        usage(argv[0]);
+        return -1;
+    }
+    if (i + 1 >= argc) {
+        fprintf(stderr, "%s: missing value\n", opt);
+        return -1;
+    }
+    return 0;
+}
+
 #ifdef PAGERANK_CUDA
 /* Reads the "T,W" of -b into params.  Returns 0, or -1 if it is not two
  * non-negative integers separated by a comma. */
@@ -207,33 +227,31 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    for (i = 2; i < argc; i++) {
-        if (i + 1 >= argc) {
-            fprintf(stderr, "%s: missing value\n", argv[i]);
+    for (i = 2; i < argc; i += 2) {
+        const char *val;
+
+        if (check_option(argc, argv, i) != 0) {
             return EXIT_FAILURE;
         }
-        if (strcmp(argv[i], "-i") == 0) {
-            ids_path = argv[++i];
-        } else if (strcmp(argv[i], "-d") == 0) {
-            params.damping = strtod(argv[++i], NULL);
-        } else if (strcmp(argv[i], "-t") == 0) {
-            params.tolerance = strtod(argv[++i], NULL);
-        } else if (strcmp(argv[i], "-n") == 0) {
-            params.max_iters = (int)strtol(argv[++i], NULL, 10);
-        } else if (strcmp(argv[i], "-k") == 0) {
-            k = (int)strtol(argv[++i], NULL, 10);
-        } else if (strcmp(argv[i], "-o") == 0) {
-            ranks_path = argv[++i];
-        } else if (strcmp(argv[i], "-c") == 0) {
-            csv_path = argv[++i];
+        val = argv[i + 1];
+
+        switch (argv[i][1]) {
+        case 'i': ids_path         = val;                          break;
+        case 'd': params.damping   = strtod(val, NULL);            break;
+        case 't': params.tolerance = strtod(val, NULL);            break;
+        case 'n': params.max_iters = (int)strtol(val, NULL, 10);   break;
+        case 'k': k                = (int)strtol(val, NULL, 10);   break;
+        case 'o': ranks_path       = val;                          break;
+        case 'c': csv_path         = val;                          break;
 #ifdef PAGERANK_CUDA
-        } else if (strcmp(argv[i], "-b") == 0) {
-            if (parse_classes(argv[++i], &params) != 0) {
+        case 'b':
+            if (parse_classes(val, &params) != 0) {
                 fprintf(stderr, "-b wants two row lengths, e.g. -b 16,256\n");
                 return EXIT_FAILURE;
             }
+            break;
 #endif
-        } else {
+        default:
             fprintf(stderr, "%s: unknown option\n", argv[i]);
             usage(argv[0]);
             return EXIT_FAILURE;
