@@ -4,11 +4,9 @@ OMPFLAGS := -fopenmp
 LDLIBS   := -lm
 BUILD    := build
 
-# pagerank.c carries the OpenMP pragmas.  Compiled without -fopenmp the
-# compiler ignores them and emits plain serial loops, so the sequential and
-# the parallel binary are built from exactly the same source.
-# Ignoring the pragmas is the point of the sequential build, so silence the
-# warning that says so; otherwise it fires once per pragma on every build.
+# Without -fopenmp the pragmas of pagerank.c are ignored and the loops run
+# serially: seq and omp come from the same source.  Ignoring them is the
+# point, so the warning about it is silenced.
 SEQFLAGS := -Wno-unknown-pragmas
 
 OBJS := csr.o pagerank.o main.o
