@@ -33,7 +33,17 @@ typedef struct {
     int    converged;   /* non-zero if the tolerance was reached */
 } pagerank_stats;
 
-pagerank_params pagerank_default_params(void);
+/* The CPU and the GPU build link different implementations of pagerank(),
+ * and both must start from the same defaults. */
+static inline pagerank_params pagerank_default_params(void)
+{
+    pagerank_params p;
+
+    p.damping   = 0.85;
+    p.tolerance = 1e-6;
+    p.max_iters = 100;
+    return p;
+}
 
 /* Computes the PageRank of g into the rank array, which must have room for
  * g->n_nodes entries.  Returns 0 on success, -1 if working memory could not
