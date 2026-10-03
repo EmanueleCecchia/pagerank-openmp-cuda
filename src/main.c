@@ -1,7 +1,6 @@
 /* Driver: load a .csr graph, run PageRank, report timing and the top nodes.
  *
- * Built twice from the same objects (see the Makefile): pagerank_seq without
- * -fopenmp and pagerank_omp with it. */
+ * Built several times from the same source (see the Makefile) */
 
 #include "csr.h"
 #include "pagerank.h"
@@ -48,14 +47,39 @@ static void usage(const char *prog)
             "  -n NUM   maximum iterations        (default 100)\n"
             "  -k NUM   how many top nodes to print (default 10)\n"
             "  -o FILE  write every rank to FILE, with the run details in a header\n"
-            "  -c FILE  append one CSV row of run details to FILE (for benchmarks)\n",
-            prog);
+            "  -c FILE  append one CSV row of run details to FILE (for benchmarks)\n"
+#ifdef PAGERANK_CUDA
+            "  -b T,W   rows of up to T in-neighbours get a thread, up to W a warp,\n"
+            "           longer a block (default 16,256; a T beyond the longest row\n"
+            "           gives every row its own thread)\n"
+#endif
+            , prog);
 }
+
+#ifdef PAGERANK_CUDA
+/* Reads the "T,W" of -b into params.  Returns 0, or -1 if it is not two
+ * non-negative integers separated by a comma. */
+static int parse_classes(const char *text, pagerank_params *params)
+{
+    uint64_t t, w;
+    char extra;
+
+    if (strchr(text, '-') != NULL ||
+        sscanf(text, "%" SCNu64 ",%" SCNu64 "%c", &t, &w, &extra) != 2) {
+        return -1;
+    }
+    params->thread_max = t;
+    params->warp_max   = w;
+    return 0;
+}
+#endif
 
 /* "seq" and "omp" are separate rows in the benchmark log on purpose: an
  * OpenMP build restricted to one thread is not the same thing as a build
  * with no OpenMP at all, and the difference shows up in the timings. */
-#ifdef _OPENMP
+#if defined(PAGERANK_CUDA)
+#define BUILD_LABEL "cuda"
+#elif defined(_OPENMP)
 #define BUILD_LABEL "omp"
 #else
 #define BUILD_LABEL "seq"
@@ -74,7 +98,8 @@ static int rank_digits(void)
  * useless.  Use `sort -k2 -g -r` afterwards to view them by rank. */
 static int write_ranks(const char *path, const csr_graph *g, const uint64_t *ids,
                        const rank_t *rank, const pagerank_params *params,
-                       const pagerank_stats *stats, double rank_sum, int threads)
+                       const pagerank_stats *stats, double rank_sum, int threads,
+                       const char *device)
 {
     FILE *f = fopen(path, "w");
     uint64_t v;
@@ -91,6 +116,11 @@ static int write_ranks(const char *path, const csr_graph *g, const uint64_t *ids
     fprintf(f, "# precision        %s\n",
             sizeof(rank_t) == sizeof(double) ? "double" : "float");
     fprintf(f, "# threads          %d\n", threads);
+    if (device != NULL) {
+        fprintf(f, "# device           %s\n", device);
+        fprintf(f, "# classes          %" PRIu64 ",%" PRIu64 "\n",
+                params->thread_max, params->warp_max);
+    }
     fprintf(f, "# damping          %g\n", params->damping);
     fprintf(f, "# tolerance        %g\n", params->tolerance);
     fprintf(f, "# iterations       %d\n", stats->iterations);
@@ -167,6 +197,10 @@ int main(int argc, char **argv)
     int k = 10, n_top = 0, i, threads;
     uint64_t v;
     accum_t total = 0.0;
+    const char *device = NULL;   /* the GPU build's description of its device */
+#ifdef PAGERANK_CUDA
+    char device_buf[256];
+#endif
 
     if (argc < 2) {
         usage(argv[0]);
@@ -192,6 +226,13 @@ int main(int argc, char **argv)
             ranks_path = argv[++i];
         } else if (strcmp(argv[i], "-c") == 0) {
             csv_path = argv[++i];
+#ifdef PAGERANK_CUDA
+        } else if (strcmp(argv[i], "-b") == 0) {
+            if (parse_classes(argv[++i], &params) != 0) {
+                fprintf(stderr, "-b wants two row lengths, e.g. -b 16,256\n");
+                return EXIT_FAILURE;
+            }
+#endif
         } else {
             fprintf(stderr, "%s: unknown option\n", argv[i]);
             usage(argv[0]);
@@ -233,10 +274,25 @@ int main(int argc, char **argv)
     threads = 1;
 #endif
 
+#ifdef PAGERANK_CUDA
+    if (pagerank_device(device_buf, sizeof(device_buf)) != 0) {
+        free(rank);
+        free(top);
+        free(ids);
+        csr_free(&g);
+        return EXIT_FAILURE;
+    }
+    device = device_buf;
+#endif
+
     printf("graph      %s\n", argv[1]);
     printf("           %" PRIu64 " nodes, %" PRIu64 " edges\n", g.n_nodes, g.n_edges);
     printf("precision  %s\n", sizeof(rank_t) == sizeof(double) ? "double" : "float");
-#ifdef _OPENMP
+#if defined(PAGERANK_CUDA)
+    printf("device     %s\n", device);
+    printf("classes    a thread per row up to %" PRIu64 " in-neighbours, a warp up to %"
+           PRIu64 ", a block beyond\n", params.thread_max, params.warp_max);
+#elif defined(_OPENMP)
     printf("threads    %d (OpenMP)\n", threads);
 #else
     printf("threads    1 (sequential build, no OpenMP)\n");
@@ -279,7 +335,8 @@ int main(int argc, char **argv)
     }
 
     if (ranks_path != NULL &&
-        write_ranks(ranks_path, &g, ids, rank, &params, &stats, (double)total, threads) == 0) {
+        write_ranks(ranks_path, &g, ids, rank, &params, &stats, (double)total, threads,
+                    device) == 0) {
         printf("\nranks written to %s\n", ranks_path);
     }
     if (csv_path != NULL &&
