@@ -3,6 +3,10 @@
 
 #include "csr.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Precision of the rank and contribution vectors */
 #ifdef PAGERANK_FLOAT
 typedef float rank_t;
@@ -36,5 +40,9 @@ pagerank_params pagerank_default_params(void);
  * be allocated.  stats may be NULL. */
 int pagerank(const csr_graph *g, const pagerank_params *params,
              rank_t *rank, pagerank_stats *stats);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PAGERANK_H */
