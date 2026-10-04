@@ -180,6 +180,16 @@ static int append_csv(const char *path, const char *graph, const csr_graph *g,
     int is_new = 0;
     FILE *probe = fopen(path, "r");
     FILE *f;
+    /* The cpu_share column: the fraction of the edges the CPU works on.  In
+     * the hybrid build it is what -s asked for (0 for a GPU-only run); in the
+     * CPU builds the CPU does all the work, so it is 1.  Without it a GPU-only
+     * run and a hybrid one would look the same in the CSV, since both have
+     * build "hybrid". */
+#ifdef PAGERANK_CUDA
+    const double cpu_share = params->host_share;
+#else
+    const double cpu_share = 1.0;
+#endif
 
     if (probe == NULL) {
         is_new = 1;
@@ -194,14 +204,16 @@ static int append_csv(const char *path, const char *graph, const csr_graph *g,
     }
     if (is_new) {
         fprintf(f, "graph,nodes,edges,build,precision,threads,damping,tolerance,"
-                   "iterations,converged,seconds_total,seconds_per_iter,rank_sum\n");
+                   "iterations,converged,seconds_total,seconds_per_iter,rank_sum,"
+                   "cpu_share\n");
     }
-    fprintf(f, "%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%d,%g,%g,%d,%d,%.6f,%.6f,%.15f\n",
+    fprintf(f, "%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%d,%g,%g,%d,%d,%.6f,%.6f,%.15f,%g\n",
             graph, g->n_nodes, g->n_edges, BUILD_LABEL,
             sizeof(rank_t) == sizeof(double) ? "double" : "float",
             threads, params->damping, params->tolerance,
             stats->iterations, stats->converged,
-            stats->seconds, stats->seconds / (double)stats->iterations, rank_sum);
+            stats->seconds, stats->seconds / (double)stats->iterations, rank_sum,
+            cpu_share);
 
     if (fclose(f) != 0) {
         fprintf(stderr, "%s: error while writing\n", path);
