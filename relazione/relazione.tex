@@ -1025,7 +1025,7 @@ trasferimento del grafo verso la GPU e quello dei rank finali verso l'host.}
 \nuovo{Si è preso in considerazione di misurare i tempi con gli
 eventi (\texttt{cudaEventRecord}, \texttt{cudaEventElapsedTime}) e con il
 profiler (\texttt{nvprof}, \texttt{nsys}), ma per i tempi complessivi si è
-preferito un orologio dell'host, per due ragioni: La prima è che i tempi delle
+preferito un orologio dell'host, per due ragioni: la prima è che i tempi delle
 tre versioni vanno confrontati fra loro, quindi devono venire dallo stesso
 orologio: la build sequenziale non ha né CUDA né OpenMP, perciò non dispone
 né degli eventi né di \texttt{omp\_get\_wtime}, mentre \texttt{clock\_gettime}
