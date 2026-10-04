@@ -1010,6 +1010,46 @@ e 3 la somma dei
 rank si discosta da 1 per non più di $1{,}4\cdot10^{-11}$ in doppia precisione
 e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
 
+\subsection{\texorpdfstring{\nuovo{Misura dei tempi}}{Misura dei tempi}}
+\label{sec:misura}
+\nuovo{Il tempo riportato per ogni esecuzione è quello del solo ciclo delle
+iterazioni: l'orologio si legge appena prima della prima iterazione e appena
+dopo l'ultima, con \texttt{clock\_gettime(CLOCK\_MONOTONIC)} (la funzione
+\texttt{wall\_seconds} nel codice). È tempo reale trascorso, non tempo di CPU:
+con OpenMP quest'ultimo sommerebbe il lavoro di tutti i thread e non
+mostrerebbe alcuno speed-up. Restano fuori dalla misura le operazioni fatte
+una volta sola: la lettura del file \texttt{.csr} e, nella versione ibrida, il
+trasferimento del grafo verso la GPU e quello dei rank finali verso l'host.}
+
+\stacco
+\nuovo{Si è preso in considerazione di misurare i tempi con gli
+eventi (\texttt{cudaEventRecord}, \texttt{cudaEventElapsedTime}) e con il
+profiler (\texttt{nvprof}, \texttt{nsys}), ma per i tempi complessivi si è
+preferito un orologio dell'host, per due ragioni: La prima è che i tempi delle
+tre versioni vanno confrontati fra loro, quindi devono venire dallo stesso
+orologio: la build sequenziale non ha né CUDA né OpenMP, perciò non dispone
+né degli eventi né di \texttt{omp\_get\_wtime}, mentre \texttt{clock\_gettime}
+è disponibile ovunque. La seconda è che gli eventi misurano ciò che accade
+negli stream della GPU, mentre nella versione ibrida una parte del lavoro la
+svolge la CPU (Sezione~\ref{sec:cuda}): solo un orologio dell'host vede le due
+parti insieme.}
+
+\stacco
+\nuovo{La misura resta corretta anche se i kernel vengono lanciati in modo
+asincrono, perché ogni iterazione si chiude con \texttt{cudaStreamSynchronize}:
+quando l'orologio viene letto per l'ultima volta, la GPU ha davvero finito. Lo
+conferma il confronto con il profiler: con tutto il lavoro sulla GPU, il tempo
+così misurato coincide entro 0,06~ms con l'intervallo che \texttt{nsys}
+registra fra la prima e l'ultima operazione della GPU.}
+
+\stacco
+\nuovo{Il profiler resta lo strumento per il dettaglio: \texttt{nsys}
+registra inizio e fine di ogni kernel e di ogni trasferimento, ed è da lì che
+vengono le durate delle singole fasi della versione ibrida. Gli eventi CUDA
+compaiono nel codice solo per sincronizzare i due stream di quella versione, e
+sono creati con \texttt{cudaEventDisableTiming}, cioè senza registrare il
+tempo.}
+
 \subsection{Scalabilità della versione OpenMP}
 \label{sec:scalabilita}
 Ogni configurazione è stata eseguita tre volte; si riporta il minimo,
