@@ -52,6 +52,8 @@ static void usage(const char *prog)
             "  -b T,W   rows of up to T in-neighbours get a thread, up to W a warp,\n"
             "           longer a block (default 16,256; a T beyond the longest row\n"
             "           gives every row its own thread)\n"
+            "  -s VAL   share of the edges for the CPU, the longest rows first\n"
+            "           (default 0.5; 0 leaves every row to the GPU)\n"
 #endif
             , prog);
 }
@@ -96,9 +98,11 @@ static int parse_classes(const char *text, pagerank_params *params)
 
 /* "seq" and "omp" are separate rows in the benchmark log on purpose: an
  * OpenMP build restricted to one thread is not the same thing as a build
- * with no OpenMP at all, and the difference shows up in the timings. */
+ * with no OpenMP at all, and the difference shows up in the timings.  The
+ * hybrid build has no GPU-only twin, on the contrary: with -s 0 it runs the
+ * same code, and never even starts the OpenMP threads. */
 #if defined(PAGERANK_CUDA)
-#define BUILD_LABEL "cuda"
+#define BUILD_LABEL "hybrid"
 #elif defined(_OPENMP)
 #define BUILD_LABEL "omp"
 #else
@@ -140,6 +144,9 @@ static int write_ranks(const char *path, const csr_graph *g, const uint64_t *ids
         fprintf(f, "# device           %s\n", device);
         fprintf(f, "# classes          %" PRIu64 ",%" PRIu64 "\n",
                 params->thread_max, params->warp_max);
+        fprintf(f, "# cpu_share        %g\n", params->host_share);
+        fprintf(f, "# cpu_rows         %" PRIu64 "\n", stats->host_rows);
+        fprintf(f, "# cpu_edges        %" PRIu64 "\n", stats->host_edges);
     }
     fprintf(f, "# damping          %g\n", params->damping);
     fprintf(f, "# tolerance        %g\n", params->tolerance);
@@ -250,6 +257,7 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
             break;
+        case 's': params.host_share = strtod(val, NULL);           break;
 #endif
         default:
             fprintf(stderr, "%s: unknown option\n", argv[i]);
@@ -260,6 +268,10 @@ int main(int argc, char **argv)
 
     if (params.damping <= 0.0 || params.damping >= 1.0 || k < 1 || params.max_iters < 1) {
         fprintf(stderr, "invalid parameters: need 0 < d < 1, k >= 1, iterations >= 1\n");
+        return EXIT_FAILURE;
+    }
+    if (params.host_share < 0.0 || params.host_share > 1.0) {
+        fprintf(stderr, "invalid parameters: the CPU's share must be between 0 and 1\n");
         return EXIT_FAILURE;
     }
 
@@ -310,6 +322,12 @@ int main(int argc, char **argv)
     printf("device     %s\n", device);
     printf("classes    a thread per row up to %" PRIu64 " in-neighbours, a warp up to %"
            PRIu64 ", a block beyond\n", params.thread_max, params.warp_max);
+    if (params.host_share > 0.0) {
+        printf("cpu        the longest rows, up to %g%% of the edges, on %d OpenMP threads\n",
+               100.0 * params.host_share, threads);
+    } else {
+        printf("cpu        no rows (-s 0): GPU only\n");
+    }
 #elif defined(_OPENMP)
     printf("threads    %d (OpenMP)\n", threads);
 #else
@@ -337,6 +355,15 @@ int main(int argc, char **argv)
            stats.iterations, stats.error);
     printf("time       %.4f s total, %.4f s per iteration\n",
            stats.seconds, stats.seconds / (double)stats.iterations);
+#ifdef PAGERANK_CUDA
+    if (stats.host_rows > 0) {
+        printf("cpu took   %" PRIu64 " rows of %" PRIu64 " in-neighbours or more,"
+               " %.1f%% of the edges\n", stats.host_rows, stats.host_min_len,
+               100.0 * (double)stats.host_edges / (double)g.n_edges);
+    } else {
+        printf("cpu took   no rows\n");
+    }
+#endif
     /* The ranks form a probability distribution, so this must be 1: a
      * deviation means the dangling mass was not redistributed correctly. */
     printf("rank sum   %.12f\n", (double)total);
