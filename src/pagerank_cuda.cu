@@ -341,8 +341,10 @@ static int group_rows(const csr_graph *g, const pagerank_params *params,
     return 0;
 }
 
-/* Also the first CUDA call of the run, so it is here, and not in the timed
- * code, that the driver pays for setting up its context on the device. */
+/* Besides describing the GPU, this is the first CUDA call of the program,
+ * and the first CUDA call is the one that starts the driver up on the GPU,
+ * which takes a while.  main() calls it before pagerank(), so that this
+ * start-up cost is paid here and does not end up in the measured time. */
 int pagerank_device(char *buf, size_t size)
 {
     cudaDeviceProp prop;
