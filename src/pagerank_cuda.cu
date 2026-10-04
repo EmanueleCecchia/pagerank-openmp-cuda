@@ -373,10 +373,11 @@ static int row_class(const csr_graph *g, const pagerank_params *params,
 
 /* Groups the rows by class into one array, first those for a thread, then
  * those for a warp, then those for a block, and last those for the CPU
- * (the rows at least host_min_len long); each group in increasing row order so that neighbouring threads still get neighbouring
- * rows.  The nodes keep their numbers: renumbering them by class would
- * scatter the in-neighbours that the original order keeps close (the
- * locality table of the report).
+ * (the rows at least host_min_len long); each group in increasing row
+ * order so that neighbouring threads still get neighbouring rows.  The
+ * nodes keep their numbers: renumbering them by class would scatter the
+ * in-neighbours that the original order keeps close (the locality table of
+ * the report).
  *
  * count[c] receives how many rows class c got, *rows the array, left NULL
  * when every row falls in the thread class: there is nothing to group then,
@@ -541,14 +542,14 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     HANDLE_ERROR(cudaMallocHost(&h_scalars, N_SCALARS * sizeof(accum_t)));
     HANDLE_ERROR(cudaStreamCreate(&stream));
     if (count[CLASS_HOST] > 0) {
-        /* Only when the CPU has rows.  contrib must reach the host while the GPU
-        * keeps computing, which needs two things: page-locked host memory, the
-        * only kind the GPU can copy into on its own, while kernels run; and a
-        * stream of its own for the copy, since in one stream every operation waits
-        * for the one before.  The two events are just markers: the copy waits for
-        * contrib_done (contrib_kernel has finished), the host waits for
-        * contrib_copied (the copy has finished).  They measure no time, hence
-        * cudaEventDisableTiming. */
+        /* Only when the CPU has rows.  contrib must reach the host while
+         * the GPU keeps computing, which needs two things: page-locked host
+         * memory, the only kind the GPU can copy into on its own, while
+         * kernels run; and a stream of its own for the copy, since in one
+         * stream every operation waits for the one before.  The two events
+         * are just markers: the copy waits for contrib_done (contrib_kernel
+         * has finished), the host waits for contrib_copied (the copy has
+         * finished).  They measure no time, hence cudaEventDisableTiming. */
         HANDLE_ERROR(cudaMallocHost(&h_contrib,    vector_bytes));
         HANDLE_ERROR(cudaMallocHost(&h_host_ranks, host_bytes));
         HANDLE_ERROR(cudaStreamCreate(&copy_stream));
