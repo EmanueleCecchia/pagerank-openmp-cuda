@@ -214,25 +214,37 @@ MACHINE=machine2 tools/run_benchmarks.sh
 
 Every machine the experiments run on gets its own folder, named by `MACHINE`.
 The sweep runs every graph against
-the sequential, OpenMP and float builds, three repetitions each, and writes:
+the sequential, OpenMP and hybrid builds, each also in single precision but
+the sequential, three repetitions each, and writes:
 
 - `results/<machine>/bench.csv` — one row per run;
 - `results/<machine>/<graph>.ranks.txt` — the rank vectors (gitignored).
 
 The OpenMP thread counts follow the CPU: the powers of two up to the logical
 CPUs, plus the physical cores and the logical CPUs themselves (ex. 1/2/4/8 on the
-4-core/8-thread machine).
-Settings can be overridden from the environment — `GRAPHS`, `THREADS`,
-`REPS`, `DATA`, `OUT`:
+4-core/8-thread machine). The hybrid build runs on every logical CPU, once for
+each share of the edges for the CPU: 0 (the GPU alone), 0.25, 0.5 and 0.75.
+Settings can be overridden from the environment — `GRAPHS`, `BUILDS`,
+`THREADS`, `SHARES`, `REPS`, `DATA`, `OUT`:
 
 ```bash
 MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
 ```
 
-The two analysis tools read what the sweep produced:
+`BUILDS` picks among `seq`, `omp` and `hybrid`. A sweep replaces in
+`bench.csv` only the rows of the graphs and builds it measures, so the hybrid
+build can be measured, or measured again, without touching the CPU results,
+and vice versa:
+
+```bash
+MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
+```
+
+The analysis tools read what the sweep produced:
 
 ```bash
 python3 tools/plot_results.py
+python3 tools/hybrid_table.py results/machine1
 python3 tools/locality_stats.py data/snap/*.csr
 ```
 
@@ -241,6 +253,9 @@ speed-up and parallel efficiency, in `relazione/figure/`, with one curve per
 machine in each.
 To pick or rename them, give one `--machine` per machine, with its folder or CSV:
 `--machine "Laptop 4c/8t" results/machine1 --machine "Workstation 12c/24t" results/machine3`.
+`hybrid_table.py` prints the times of the hybrid build, one row per graph and
+one column per share of the edges for the CPU, next to the best OpenMP time
+of the same machine.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
 the cache lines the gather touches: their count, per edge and per line, and
 the MiB one iteration asks for.
@@ -252,7 +267,7 @@ the MiB one iteration asks for.
   the CPU taking the longest rows),
   `main.c` (driver), `csr_info.c` (graph statistics)
 - `tools/` — Python and shell helpers: conversion, verification, benchmark
-  sweep, figures, locality statistics
+  sweep, figures, table of the hybrid times, locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF
 - `results/` — one folder per machine, with `bench.csv` (every run) and the
   gitignored rank vectors;

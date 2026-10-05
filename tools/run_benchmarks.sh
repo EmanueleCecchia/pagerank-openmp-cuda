@@ -13,6 +13,12 @@
 # noise; take the minimum per configuration when building the tables, since
 # the fastest run is the one least disturbed by other activity.
 #
+# BUILDS picks what to measure: seq, omp (with its float variant) and hybrid
+# (with its float variant, at every share of the edges in SHARES).  A sweep
+# replaces in bench.csv only the rows of the graphs and builds it measures, so
+# the hybrid build can be measured without touching the CPU results, vice versa:
+#   MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
+#
 # Override any of the other settings from the environment, e.g.
 #   MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
 
@@ -42,20 +48,53 @@ default_threads() {
 }
 
 GRAPHS=${GRAPHS:-"wiki-Vote web-NotreDame web-Stanford web-Google web-BerkStan cit-Patents wiki-topcats soc-Pokec soc-LiveJournal1"}
+BUILDS=${BUILDS:-"seq omp hybrid"}
 THREADS=${THREADS:-$(default_threads)}
+# Shares of the edges for the CPU in the hybrid build, each one measured and
+# recorded: 0 is the GPU alone.
+SHARES=${SHARES:-"0 0.25 0.5 0.75"}
 REPS=${REPS:-3}
 DATA=${DATA:-data/snap}
 OUT=${OUT:-results/$MACHINE}
+CSV="$OUT/bench.csv"
 
-if [ ! -x build/pagerank_omp ]; then
-    echo "build/pagerank_omp missing -- run 'make' first" >&2
-    exit 1
-fi
+measures() {
+    case " $BUILDS " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+for build in $BUILDS; do
+    case $build in
+        seq)    needed="pagerank_seq" ;;
+        omp)    needed="pagerank_omp pagerank_omp_float" ;;
+        hybrid) needed="pagerank_hybrid pagerank_hybrid_float" ;;
+        *)      echo "unknown build '$build' in BUILDS (seq, omp, hybrid)" >&2; exit 1 ;;
+    esac
+    for exe in $needed; do
+        if [ ! -x "build/$exe" ]; then
+            echo "build/$exe missing -- run 'make' first" >&2
+            exit 1
+        fi
+    done
+done
 
 mkdir -p "$OUT"
-rm -f "$OUT/bench.csv"
 
-echo "machine $MACHINE, threads: $THREADS"
+# Drop the rows this sweep is about to measure again, keep every other one.
+# The graph column holds the .csr path, so the graph is its last component.
+if [ -f "$CSV" ]; then
+    awk -F, -v graphs="$GRAPHS" -v builds="$BUILDS" '
+        BEGIN { split(graphs, g, " "); for (i in g) G[g[i] ".csr"] = 1
+                split(builds, b, " "); for (i in b) B[b[i]] = 1 }
+        NR == 1 { print; next }
+        { n = split($1, path, "/"); if (!((path[n] in G) && ($4 in B))) print }
+    ' "$CSV" > "$CSV.tmp"
+    mv "$CSV.tmp" "$CSV"
+fi
+
+echo "machine $MACHINE, builds: $BUILDS"
+measures omp && echo "OpenMP threads: $THREADS"
+measures hybrid && echo "hybrid shares: $SHARES, on $(nproc) OpenMP threads"
 for graph in $GRAPHS; do
     csr="$DATA/$graph.csr"
     ids="$DATA/$graph.ids"
@@ -67,21 +106,35 @@ for graph in $GRAPHS; do
 
     echo "== $graph"
     for rep in $(seq "$REPS"); do
-        # Sequential build: genuinely no OpenMP, not one thread of it.
-        ./build/pagerank_seq "$csr" -c "$OUT/bench.csv" >/dev/null
-        for t in $THREADS; do
-            OMP_NUM_THREADS=$t ./build/pagerank_omp "$csr" -c "$OUT/bench.csv" >/dev/null
-        done
-        ./build/pagerank_omp_float "$csr" -c "$OUT/bench.csv" >/dev/null
+        if measures seq; then
+            # Sequential build: genuinely no OpenMP, not one thread of it.
+            ./build/pagerank_seq "$csr" -c "$CSV" >/dev/null
+        fi
+        if measures omp; then
+            for t in $THREADS; do
+                OMP_NUM_THREADS=$t ./build/pagerank_omp "$csr" -c "$CSV" >/dev/null
+            done
+            ./build/pagerank_omp_float "$csr" -c "$CSV" >/dev/null
+        fi
+        if measures hybrid; then
+            # Every logical CPU for the CPU's rows, as the OpenMP build at its
+            # largest thread count.
+            for s in $SHARES; do
+                OMP_NUM_THREADS=$(nproc) ./build/pagerank_hybrid "$csr" -s "$s" -c "$CSV" >/dev/null
+                OMP_NUM_THREADS=$(nproc) ./build/pagerank_hybrid_float "$csr" -s "$s" -c "$CSV" >/dev/null
+            done
+        fi
         echo "   repetition $rep done"
     done
 
     # The ranks themselves only need computing once.
-    ./build/pagerank_omp "$csr" -i "$ids" -o "$OUT/$graph.ranks.txt" >/dev/null
+    if measures omp; then
+        ./build/pagerank_omp "$csr" -i "$ids" -o "$OUT/$graph.ranks.txt" >/dev/null
+    fi
 done
 
 echo
-echo "wrote $OUT/bench.csv ($(( $(wc -l < "$OUT/bench.csv") - 1 )) runs)"
+echo "wrote $CSV ($(( $(wc -l < "$CSV") - 1 )) runs)"
 ls -1 "$OUT"/*.ranks.txt 2>/dev/null | while read -r f; do
     echo "wrote $f ($(du -h "$f" | cut -f1))"
 done
