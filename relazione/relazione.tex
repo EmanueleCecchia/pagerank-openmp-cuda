@@ -1412,6 +1412,16 @@ sovrapposizione fra trasferimenti e calcolo.}
     linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
     dal grafo; varrebbe la pena cercarlo, confrontando anche politiche come
     \texttt{guided}.
+  \item \nuovo{\textbf{Bilanciamento automatico della quota.} Nella versione
+    ibrida la quota di archi assegnata alla CPU è un parametro
+    (\texttt{-s}), e la migliore è quella con cui CPU e GPU finiscono il
+    proprio lavoro insieme: dipende quindi dal grafo e dal rapporto fra la
+    velocità della CPU e quella della GPU della macchina. Il programma
+    potrebbe trovarla da solo nelle prime iterazioni: se a fine iterazione
+    la CPU ha aspettato la GPU, le cede altre righe; se invece è la GPU ad
+    aver aspettato, gliene toglie. Sarebbe l'estensione naturale del
+    requisito di portabilità alla ripartizione del lavoro, che oggi si
+    sceglie a mano.}
 \end{itemize}
 
 \daFare{Aggiungere la valutazione personale complessiva una volta
