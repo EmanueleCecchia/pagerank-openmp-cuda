@@ -15,9 +15,11 @@
 #
 # BUILDS picks what to measure: seq, omp (with its float variant) and hybrid
 # (with its float variant, at every share of the edges in SHARES).  A sweep
-# replaces in bench.csv only the rows of the graphs and builds it measures, so
-# the hybrid build can be measured without touching the CPU results, vice versa:
+# replaces in bench.csv only the rows of the graphs, builds and, for the
+# hybrid one, shares it measures, so the hybrid build can be measured without
+# touching the CPU results, vice versa, and one share without the others:
 #   MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
+#   MACHINE=machine1 BUILDS=hybrid SHARES=1 tools/run_benchmarks.sh
 #
 # Override any of the other settings from the environment, e.g.
 #   MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
@@ -51,8 +53,9 @@ GRAPHS=${GRAPHS:-"wiki-Vote web-NotreDame web-Stanford web-Google web-BerkStan c
 BUILDS=${BUILDS:-"seq omp hybrid"}
 THREADS=${THREADS:-$(default_threads)}
 # Shares of the edges for the CPU in the hybrid build, each one measured and
-# recorded: 0 is the GPU alone.
-SHARES=${SHARES:-"0 0.25 0.5 0.75"}
+# recorded: 0 is the GPU alone, 1 the CPU alone but for contrib_kernel and
+# the rows with no in-neighbours.
+SHARES=${SHARES:-"0 0.25 0.5 0.75 1"}
 REPS=${REPS:-3}
 DATA=${DATA:-data/snap}
 OUT=${OUT:-results/$MACHINE}
@@ -81,13 +84,18 @@ done
 mkdir -p "$OUT"
 
 # Drop the rows this sweep is about to measure again, keep every other one.
-# The graph column holds the .csr path, so the graph is its last component.
+# The graph column holds the .csr path, so the graph is its last component;
+# the hybrid rows also match on the share, column 14, compared as numbers so
+# that 0.50 is 0.5.
 if [ -f "$CSV" ]; then
-    awk -F, -v graphs="$GRAPHS" -v builds="$BUILDS" '
+    awk -F, -v graphs="$GRAPHS" -v builds="$BUILDS" -v shares="$SHARES" '
         BEGIN { split(graphs, g, " "); for (i in g) G[g[i] ".csr"] = 1
-                split(builds, b, " "); for (i in b) B[b[i]] = 1 }
+                split(builds, b, " "); for (i in b) B[b[i]] = 1
+                split(shares, s, " "); for (i in s) S[s[i] + 0] = 1 }
         NR == 1 { print; next }
-        { n = split($1, path, "/"); if (!((path[n] in G) && ($4 in B))) print }
+        { n = split($1, path, "/")
+          again = (path[n] in G) && ($4 in B) && ($4 != "hybrid" || ($14 + 0) in S)
+          if (!again) print }
     ' "$CSV" > "$CSV.tmp"
     mv "$CSV.tmp" "$CSV"
 fi

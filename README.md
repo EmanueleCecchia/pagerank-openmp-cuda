@@ -223,7 +223,8 @@ the sequential, three repetitions each, and writes:
 The OpenMP thread counts follow the CPU: the powers of two up to the logical
 CPUs, plus the physical cores and the logical CPUs themselves (ex. 1/2/4/8 on the
 4-core/8-thread machine). The hybrid build runs on every logical CPU, once for
-each share of the edges for the CPU: 0 (the GPU alone), 0.25, 0.5 and 0.75.
+each share of the edges for the CPU: 0 (the GPU alone), 0.25, 0.5, 0.75 and 1
+(the CPU alone but not as in `OpenMP`).
 Settings can be overridden from the environment — `GRAPHS`, `BUILDS`,
 `THREADS`, `SHARES`, `REPS`, `DATA`, `OUT`:
 
@@ -231,13 +232,12 @@ Settings can be overridden from the environment — `GRAPHS`, `BUILDS`,
 MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
 ```
 
-`BUILDS` picks among `seq`, `omp` and `hybrid`. A sweep replaces in
-`bench.csv` only the rows of the graphs and builds it measures, so the hybrid
-build can be measured, or measured again, without touching the CPU results,
-and vice versa:
+`BUILDS` picks which builds to run: `seq`, `omp`, `hybrid`. A sweep only
+replaces the rows of `bench.csv` it measures again:
 
 ```bash
 MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
+MACHINE=machine1 BUILDS=hybrid SHARES=1 tools/run_benchmarks.sh
 ```
 
 The analysis tools read what the sweep produced:
