@@ -190,6 +190,15 @@ static int append_csv(const char *path, const char *graph, const csr_graph *g,
 #else
     const double cpu_share = 1.0;
 #endif
+    /* The classes column: -b, the longest rows the GPU gives a thread and a
+     * warp, written T/W since a comma would split the column.  Empty in the
+     * CPU builds, which have no classes. */
+    char classes[48] = "";
+
+#ifdef PAGERANK_CUDA
+    snprintf(classes, sizeof(classes), "%" PRIu64 "/%" PRIu64,
+             params->thread_max, params->warp_max);
+#endif
 
     if (probe == NULL) {
         is_new = 1;
@@ -205,15 +214,15 @@ static int append_csv(const char *path, const char *graph, const csr_graph *g,
     if (is_new) {
         fprintf(f, "graph,nodes,edges,build,precision,threads,damping,tolerance,"
                    "iterations,converged,seconds_total,seconds_per_iter,rank_sum,"
-                   "cpu_share\n");
+                   "cpu_share,classes\n");
     }
-    fprintf(f, "%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%d,%g,%g,%d,%d,%.6f,%.6f,%.15f,%g\n",
+    fprintf(f, "%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%d,%g,%g,%d,%d,%.6f,%.6f,%.15f,%g,%s\n",
             graph, g->n_nodes, g->n_edges, BUILD_LABEL,
             sizeof(rank_t) == sizeof(double) ? "double" : "float",
             threads, params->damping, params->tolerance,
             stats->iterations, stats->converged,
             stats->seconds, stats->seconds / (double)stats->iterations, rank_sum,
-            cpu_share);
+            cpu_share, classes);
 
     if (fclose(f) != 0) {
         fprintf(stderr, "%s: error while writing\n", path);

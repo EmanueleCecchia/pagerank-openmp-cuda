@@ -171,8 +171,9 @@ grep -v '^#' ranks.txt | sort -k2 -g -r | head
 `-c` appends one row per run to a CSV — graph, nodes, edges, build,
 precision, threads, damping, tolerance, iterations, converged, seconds total,
 seconds per iteration, rank sum, share of the edges gathered by the CPU (the
-`-s` of the hybrid builds, 1 for the CPU ones) — writing the header only when
-the file is created, so a sweep builds its own results table:
+`-s` of the hybrid builds, 1 for the CPU ones), classes (the `-b` of the
+hybrid builds, as `16/256`; empty for the CPU ones) — writing the header only
+when the file is created, so a sweep builds its own results table:
 
 ```bash
 for t in 1 2 4 8; do
