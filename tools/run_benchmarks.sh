@@ -21,6 +21,12 @@
 #   MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
 #   MACHINE=machine1 BUILDS=hybrid SHARES=1 tools/run_benchmarks.sh
 #
+# When nsys is installed every run of the hybrid build goes under it, and its
+# report is kept in results/<machine>/nsys/ (gitignored): at the end
+# tools/nsys_phases.py reads from each report how that run's iterations split
+# up into results/<machine>/nsys_phases.csv, one row for every hybrid row of
+# bench.csv.  NSYS= turns it off; NSYS=/path/to/nsys picks another one.
+#
 # Override any of the other settings from the environment, e.g.
 #   MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
 
@@ -60,6 +66,9 @@ REPS=${REPS:-3}
 DATA=${DATA:-data/snap}
 OUT=${OUT:-results/$MACHINE}
 CSV="$OUT/bench.csv"
+NSYS=${NSYS-$(command -v nsys || true)}
+NSYS_DIR="$OUT/nsys"
+PYTHON=${PYTHON:-python3}
 
 measures() {
     case " $BUILDS " in *" $1 "*) return 0 ;; esac
@@ -99,10 +108,34 @@ if [ -f "$CSV" ]; then
     ' "$CSV" > "$CSV.tmp"
     mv "$CSV.tmp" "$CSV"
 fi
+# The same for the nsys reports of the hybrid runs measured again.
+if measures hybrid && [ -n "$NSYS" ]; then
+    mkdir -p "$NSYS_DIR"
+    for graph in $GRAPHS; do
+        for s in $SHARES; do
+            rm -f "$NSYS_DIR/$graph"-double-s"$s"-r*.nsys-rep "$NSYS_DIR/$graph"-float-s"$s"-r*.nsys-rep
+        done
+    done
+fi
+
+# One run of the hybrid build, on every logical CPU for the CPU's rows, as the
+# OpenMP build at its largest thread count.  Under nsys, if any, tracing the
+# CUDA calls only: sampling the CPU would slow down the runs where the CPU
+# does most of the work.  The report is the very run whose time goes in
+# bench.csv.
+run_hybrid() {    # executable precision share repetition
+    if [ -n "$NSYS" ]; then
+        OMP_NUM_THREADS=$(nproc) "$NSYS" profile --trace=cuda --sample=none --cpuctxsw=none \
+            --force-overwrite true -o "$NSYS_DIR/$graph-$2-s$3-r$4" \
+            "$1" "$csr" -s "$3" -c "$CSV" >/dev/null
+    else
+        OMP_NUM_THREADS=$(nproc) "$1" "$csr" -s "$3" -c "$CSV" >/dev/null
+    fi
+}
 
 echo "machine $MACHINE, builds: $BUILDS"
 measures omp && echo "OpenMP threads: $THREADS"
-measures hybrid && echo "hybrid shares: $SHARES, on $(nproc) OpenMP threads"
+measures hybrid && echo "hybrid shares: $SHARES, on $(nproc) OpenMP threads${NSYS:+, under nsys}"
 for graph in $GRAPHS; do
     csr="$DATA/$graph.csr"
     ids="$DATA/$graph.ids"
@@ -125,11 +158,9 @@ for graph in $GRAPHS; do
             ./build/pagerank_omp_float "$csr" -c "$CSV" >/dev/null
         fi
         if measures hybrid; then
-            # Every logical CPU for the CPU's rows, as the OpenMP build at its
-            # largest thread count.
             for s in $SHARES; do
-                OMP_NUM_THREADS=$(nproc) ./build/pagerank_hybrid "$csr" -s "$s" -c "$CSV" >/dev/null
-                OMP_NUM_THREADS=$(nproc) ./build/pagerank_hybrid_float "$csr" -s "$s" -c "$CSV" >/dev/null
+                run_hybrid ./build/pagerank_hybrid double "$s" "$rep"
+                run_hybrid ./build/pagerank_hybrid_float float "$s" "$rep"
             done
         fi
         echo "   repetition $rep done"
@@ -140,6 +171,10 @@ for graph in $GRAPHS; do
         ./build/pagerank_omp "$csr" -i "$ids" -o "$OUT/$graph.ranks.txt" >/dev/null
     fi
 done
+
+if measures hybrid && [ -n "$NSYS" ]; then
+    "$PYTHON" tools/nsys_phases.py "$OUT" --nsys "$NSYS"
+fi
 
 echo
 echo "wrote $CSV ($(( $(wc -l < "$CSV") - 1 )) runs)"

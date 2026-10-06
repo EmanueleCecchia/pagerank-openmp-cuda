@@ -67,6 +67,9 @@ build/
 # Experiment output, one folder per machine:
 # the rank vectors are far too large to version.
 results/**/*.ranks.txt
+# the nsys reports of the hybrid runs, behind nsys_phases.csv: binary, and
+# made again by tools/run_benchmarks.sh
+results/**/nsys/
 
 # LaTeX auxiliary files (the .tex and the built .pdf are kept)
 *.aux

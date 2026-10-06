@@ -240,11 +240,23 @@ MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
 MACHINE=machine1 BUILDS=hybrid SHARES=1 tools/run_benchmarks.sh
 ```
 
+When `nsys` is installed, every run of the hybrid build goes under it,
+tracing the CUDA calls only, and its report is kept in
+`results/<machine>/nsys/` (gitignored; to look at one, open it with
+`nsys-ui`, the graphical viewer of Nsight Systems). At the end
+`tools/nsys_phases.py` reads from each report how that
+run's iterations split up — the GPU's gather, the copy of `contrib` to the
+host, the CPU's gather, the ranks going back, the waits — and writes
+`results/<machine>/nsys_phases.csv`, one row for every hybrid row of
+`bench.csv`, from the very same run, with its time copied for checking.
+The profiler costs about 1% of the time. `NSYS=` runs without it.
+
 The analysis tools read what the sweep produced:
 
 ```bash
 python3 tools/plot_results.py
 python3 tools/hybrid_table.py results/machine1
+python3 tools/nsys_phases.py results/machine1
 python3 tools/locality_stats.py data/snap/*.csr
 ```
 
@@ -256,6 +268,8 @@ To pick or rename them, give one `--machine` per machine, with its folder or CSV
 `hybrid_table.py` prints the times of the hybrid build, one row per graph and
 one column per share of the edges for the CPU, next to the best OpenMP time
 of the same machine.
+`nsys_phases.py` rebuilds `nsys_phases.csv` from the reports, without running
+anything.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
 the cache lines the gather touches: their count, per edge and per line, and
 the MiB one iteration asks for.
@@ -267,7 +281,8 @@ the MiB one iteration asks for.
   the CPU taking the longest rows),
   `main.c` (driver), `csr_info.c` (graph statistics)
 - `tools/` — Python and shell helpers: conversion, verification, benchmark
-  sweep, figures, table of the hybrid times, locality statistics
+  sweep, figures, table of the hybrid times, phases of the hybrid iterations,
+  locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF
 - `results/` — one folder per machine, with `bench.csv` (every run) and the
   gitignored rank vectors;
