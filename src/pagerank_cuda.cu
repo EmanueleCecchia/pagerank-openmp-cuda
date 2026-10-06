@@ -1,15 +1,22 @@
-/* PageRank on the GPU: the power iteration of pagerank.c, with the two loops
- * of every iteration turned into CUDA kernels.
+/* PageRank on the GPU and the CPU together, the hybrid version:
+ * the two loops of every iteration turned into
+ * CUDA kernels, and part of the gather left to the OpenMP threads of the host.
  *
- * Linked in place of pagerank.o (see the Makefile), so main.c drives it
- * unchanged.  The graph goes to the device once, before the clock starts,
- * and the ranks come back once, after it stops; in between every iteration
- * runs on the GPU, and the only data that crosses the bus is the L1 change
- * the host needs to decide whether to stop.
+ * The graph goes to the device once, before the clock starts,
+ * and the ranks come back once, after it stops.
  *
- * The gather adapts its granularity to the length of the rows, which spans
- * orders of magnitude in a power-law graph: short rows get a thread each,
+ * The gather adapts its granularity to the length of the rows:
+ * short rows get a thread each,
  * medium rows a warp, long rows a whole block.
+ *
+ * The longest rows, the hubs, go to the CPU instead, from the longest down
+ * until they hold params->host_share of the edges.
+ *
+ * With a share of 0 the CPU gets no rows and none of this happens: every
+ * iteration runs on the GPU, and the only data that crosses the bus is the
+ * L1 change the host needs to decide whether to stop.  That is the GPU-only
+ * version, the same code down to the last call, so it needs no build of its
+ * own.
  *
  * Nothing about the device is assumed: the multiprocessor count, how many
  * blocks each one holds and the free memory are all queried at run time.
@@ -31,13 +38,11 @@
  * that a single memset clears them and a single copy brings them back. */
 enum { SCALAR_DANGLING, SCALAR_ERROR, N_SCALARS };
 
-/* Granularity classes, in the order their rows are stored. */
-enum { CLASS_THREAD, CLASS_WARP, CLASS_BLOCK, N_CLASSES };
+/* Granularity classes, in the order their rows are stored.  The last is the
+ * CPU's: its rows are gathered on the host. */
+enum { CLASS_THREAD, CLASS_WARP, CLASS_BLOCK, CLASS_HOST, N_CLASSES };
 
-/* Every CUDA call returns an error code.  A missing device or a failed
- * launch is not something the program can recover from, so this stops at
- * the first one and says which call it was; a failed allocation is the
- * exception, and pagerank() reports it by returning -1, as on the CPU. */
+
 #define HANDLE_ERROR(call)                                                 \
     do {                                                                   \
         cudaError_t err_ = (call);                                         \
@@ -48,7 +53,6 @@ enum { CLASS_THREAD, CLASS_WARP, CLASS_BLOCK, N_CLASSES };
         }                                                                  \
     } while (0)
 
-/* Same clock as pagerank.c, so that the two builds time the same thing. */
 static double wall_seconds(void)
 {
     struct timespec ts;
@@ -160,8 +164,9 @@ __global__ void contrib_kernel(uint64_t n, const uint32_t *__restrict__ out_deg,
 
 /* The base every rank starts from, (1-d)/N plus the dangling mass spread
  * over all nodes.  Complete when a gather kernel reads it: contrib_kernel
- * ran to the end first, the kernels being queued on the same stream. */
-__device__ double rank_base(uint64_t n, double d, const accum_t *scalars)
+ * ran to the end first, the kernels being queued on the same stream.
+ * __host__ as well: the CPU's rows start from it too. */
+__host__ __device__ double rank_base(uint64_t n, double d, const accum_t *scalars)
 {
     return (1.0 - d) / (double)n + d * scalars[SCALAR_DANGLING] / (double)n;
 }
@@ -272,6 +277,21 @@ __global__ void gather_block_rows(uint64_t n_rows, const uint32_t *__restrict__ 
     block_sum_add(error, &scalars[SCALAR_ERROR]);
 }
 
+/* The ranks the CPU computed for its rows arrive packed, one after the other
+ * in the order of rows; this puts each in its place in nxt, so that the next
+ * contrib_kernel finds every node there. */
+__global__ void scatter_host_ranks(uint64_t n_rows, const uint32_t *__restrict__ rows,
+                                   const rank_t *__restrict__ ranks,
+                                   rank_t *__restrict__ nxt)
+{
+    const uint64_t stride = (uint64_t)gridDim.x * blockDim.x;
+    uint64_t i;
+
+    for (i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x; i < n_rows; i += stride) {
+        nxt[rows[i]] = ranks[i];
+    }
+}
+
 /* ---- host side ----------------------------------------------------------- */
 
 /* How many blocks to launch: as many as the device holds resident at once
@@ -290,10 +310,61 @@ static int grid_size(const void *kernel, int multiprocessors, uint64_t blocks_ne
     return (int)blocks_needed;
 }
 
-static int row_class(const csr_graph *g, const pagerank_params *params, uint64_t v)
+/* Where the CPU's rows begin.  Taking the rows from the longest down, stops
+ * before their in-neighbours exceed share of the edges; every row at least
+ * *min_len long then goes to the CPU, so that the split is a degree
+ * threshold.  A share asked of the edges, not a threshold asked of the user,
+ * because the same share takes rows of a few dozen in-neighbours on one
+ * graph and of thousands on another.
+ *
+ * *min_len is longer than any row when the CPU gets nothing (share 0, or a
+ * longest row beyond the share); *edges receives the in-neighbours the CPU
+ * gets.  Returns 0, or -1 if out of memory. */
+static int host_threshold(const csr_graph *g, double share,
+                          uint64_t *min_len, uint64_t *edges)
+{
+    const double budget = share * (double)g->n_edges;
+    uint64_t *edges_of_len;   /* the in-neighbours of all the rows of each length */
+    uint64_t v, len, max_len = 0, taken = 0;
+
+    for (v = 0; v < g->n_nodes; v++) {
+        len = g->row_ptr[v + 1] - g->row_ptr[v];
+        if (len > max_len) {
+            max_len = len;
+        }
+    }
+    edges_of_len = (uint64_t *)calloc((size_t)max_len + 1, sizeof(uint64_t));
+    if (edges_of_len == NULL) {
+        return -1;
+    }
+    for (v = 0; v < g->n_nodes; v++) {
+        len = g->row_ptr[v + 1] - g->row_ptr[v];
+        edges_of_len[len] += len;
+    }
+
+    /* Whole lengths at a time, the longest first; the empty rows, which hold
+     * no edges, stay on the GPU whatever the share. */
+    *min_len = max_len + 1;
+    for (len = max_len; len >= 1; len--) {
+        if ((double)(taken + edges_of_len[len]) > budget) {
+            break;
+        }
+        taken += edges_of_len[len];
+        *min_len = len;
+    }
+    *edges = taken;
+    free(edges_of_len);
+    return 0;
+}
+
+static int row_class(const csr_graph *g, const pagerank_params *params,
+                     uint64_t host_min_len, uint64_t v)
 {
     const uint64_t len = g->row_ptr[v + 1] - g->row_ptr[v];
 
+    if (len >= host_min_len) {
+        return CLASS_HOST;
+    }
     if (len <= params->thread_max) {
         return CLASS_THREAD;
     }
@@ -301,9 +372,10 @@ static int row_class(const csr_graph *g, const pagerank_params *params, uint64_t
 }
 
 /* Groups the rows by class into one array, first those for a thread, then
- * those for a warp, then those for a block, each group in increasing row
- * order so that neighbouring threads still get neighbouring rows.  The nodes
- * keep their numbers: renumbering them by class would scatter the
+ * those for a warp, then those for a block, and last those for the CPU
+ * (the rows at least host_min_len long); each group in increasing row
+ * order so that neighbouring threads still get neighbouring rows.  The
+ * nodes keep their numbers: renumbering them by class would scatter the
  * in-neighbours that the original order keeps close (the locality table of
  * the report).
  *
@@ -311,7 +383,7 @@ static int row_class(const csr_graph *g, const pagerank_params *params, uint64_t
  * when every row falls in the thread class: there is nothing to group then,
  * and the kernel walks the rows in order.  Returns 0, or -1 if out of memory. */
 static int group_rows(const csr_graph *g, const pagerank_params *params,
-                      uint32_t **rows, uint64_t count[N_CLASSES])
+                      uint64_t host_min_len, uint32_t **rows, uint64_t count[N_CLASSES])
 {
     uint64_t next[N_CLASSES];
     uint64_t v;
@@ -322,7 +394,7 @@ static int group_rows(const csr_graph *g, const pagerank_params *params,
         count[c] = 0;
     }
     for (v = 0; v < g->n_nodes; v++) {
-        count[row_class(g, params, v)]++;
+        count[row_class(g, params, host_min_len, v)]++;
     }
     if (count[CLASS_THREAD] == g->n_nodes) {
         return 0;
@@ -333,16 +405,50 @@ static int group_rows(const csr_graph *g, const pagerank_params *params,
         return -1;
     }
     next[CLASS_THREAD] = 0;
-    next[CLASS_WARP]   = count[CLASS_THREAD];
-    next[CLASS_BLOCK]  = count[CLASS_THREAD] + count[CLASS_WARP];
+    for (c = 1; c < N_CLASSES; c++) {
+        next[c] = next[c - 1] + count[c - 1];
+    }
     for (v = 0; v < g->n_nodes; v++) {
-        (*rows)[next[row_class(g, params, v)]++] = (uint32_t)v;
+        (*rows)[next[row_class(g, params, host_min_len, v)]++] = (uint32_t)v;
     }
     return 0;
 }
 
-/* Also the first CUDA call of the run, so it is here, and not in the timed
- * code, that the driver pays for setting up its context on the device. */
+/* The CPU's share of the gather, by the OpenMP threads.  The same sum as
+ * gather_thread_rows(), over the rows the CPU took, reading contrib from the
+ * copy the GPU sent.  ranks[i] holds the rank of rows[i] at the previous
+ * iteration and receives the new one: packed in the order of rows, they go
+ * back to the device in a single copy.  Returns the L1 change over these
+ * rows. */
+static accum_t gather_host_rows(const csr_graph *g, uint64_t n_rows, const uint32_t *rows,
+                                double base, double d, const rank_t *contrib, rank_t *ranks)
+{
+    accum_t error = 0.0;
+    uint64_t i;
+
+    /* Dynamic, because these are the longest rows and their lengths still
+     * span orders of magnitude; chunks of a few rows only, because there are
+     * few of them and every one is long. */
+#pragma omp parallel for schedule(dynamic, 16) reduction(+ : error)
+    for (i = 0; i < n_rows; i++) {
+        const uint32_t v = rows[i];
+        const rank_t prev = ranks[i];
+        accum_t sum = 0.0;
+        uint64_t j;
+
+        for (j = g->row_ptr[v]; j < g->row_ptr[v + 1]; j++) {
+            sum += (accum_t)contrib[g->col_idx[j]];
+        }
+        ranks[i] = (rank_t)(base + d * sum);
+        error += fabs((accum_t)ranks[i] - (accum_t)prev);
+    }
+    return error;
+}
+
+/* Besides describing the GPU, this is the first CUDA call of the program,
+ * and the first CUDA call is the one that starts the driver up on the GPU,
+ * which takes a while.  main() calls it before pagerank(), so that this
+ * start-up cost is paid here and does not end up in the measured time. */
 int pagerank_device(char *buf, size_t size)
 {
     cudaDeviceProp prop;
@@ -376,33 +482,39 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     const size_t   col_idx_bytes = (size_t)m * sizeof(uint32_t);
     const size_t   out_deg_bytes = (size_t)n * sizeof(uint32_t);
     const size_t   vector_bytes  = (size_t)n * sizeof(rank_t);
-    size_t   rows_bytes, needed;
+    size_t   rows_bytes, host_bytes, needed;
     uint64_t *d_row_ptr = NULL;
     uint32_t *d_col_idx = NULL, *d_out_deg = NULL, *d_rows = NULL;
     uint32_t *rows = NULL;
-    rank_t   *d_rank = NULL, *d_next = NULL, *d_contrib = NULL;
+    rank_t   *d_rank = NULL, *d_next = NULL, *d_contrib = NULL, *d_host_ranks = NULL;
+    rank_t   *h_contrib = NULL, *h_host_ranks = NULL;
     rank_t   *cur, *nxt, *tmp;
     accum_t  *d_scalars = NULL, *h_scalars = NULL;
     const uint32_t *class_rows[N_CLASSES];
-    uint64_t count[N_CLASSES];
-    int grid[N_CLASSES], grid_contrib;
-    cudaStream_t stream = NULL;
+    const uint32_t *host_rows = NULL;   /* the CPU's rows, in host memory */
+    uint64_t count[N_CLASSES], host_min_len, host_edges;
+    int grid[N_CLASSES], grid_contrib, c;
+    cudaStream_t stream = NULL, copy_stream = NULL;
+    cudaEvent_t contrib_done = NULL, contrib_copied = NULL;
     cudaDeviceProp prop;
     size_t free_bytes, total_bytes;
     int dev, iter, converged = 0, result = -1;
     double start, seconds = 0.0;
     accum_t error = 0.0;
-    uint64_t v;
+    uint64_t v, i;
 
     HANDLE_ERROR(cudaGetDevice(&dev));
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, dev));
 
-    if (group_rows(g, params, &rows, count) != 0) {
+    if (host_threshold(g, params->host_share, &host_min_len, &host_edges) != 0 ||
+        group_rows(g, params, host_min_len, &rows, count) != 0) {
         return -1;
     }
     rows_bytes = rows != NULL ? (size_t)n * sizeof(uint32_t) : 0;
+    host_bytes = (size_t)count[CLASS_HOST] * sizeof(rank_t);
     needed = row_ptr_bytes + col_idx_bytes + out_deg_bytes + rows_bytes
-           + 3 * vector_bytes;     /* cur, nxt, contrib */
+           + 3 * vector_bytes      /* cur, nxt, contrib */
+           + host_bytes;           /* the ranks of the CPU's rows, on their way in */
 
     /* Everything must fit at once: there is no out-of-core path (yet). */
     HANDLE_ERROR(cudaMemGetInfo(&free_bytes, &total_bytes));
@@ -420,6 +532,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         cudaMalloc(&d_rank,    vector_bytes)                    != cudaSuccess ||
         cudaMalloc(&d_next,    vector_bytes)                    != cudaSuccess ||
         cudaMalloc(&d_contrib, vector_bytes)                    != cudaSuccess ||
+        (host_bytes > 0 && cudaMalloc(&d_host_ranks, host_bytes) != cudaSuccess) ||
         cudaMalloc(&d_scalars, N_SCALARS * sizeof(accum_t))     != cudaSuccess) {
         fprintf(stderr, "out of device memory for %.1f MiB on %s\n", mib(needed), prop.name);
         (void)cudaGetLastError();   /* clear it, so no later check reports it again */
@@ -428,10 +541,28 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     /* Page-locked, which the asynchronous copy of the scalars requires. */
     HANDLE_ERROR(cudaMallocHost(&h_scalars, N_SCALARS * sizeof(accum_t)));
     HANDLE_ERROR(cudaStreamCreate(&stream));
+    if (count[CLASS_HOST] > 0) {
+        /* Only when the CPU has rows.  contrib must reach the host while
+         * the GPU keeps computing, which needs two things: page-locked host
+         * memory, the only kind the GPU can copy into on its own, while
+         * kernels run; and a stream of its own for the copy, since in one
+         * stream every operation waits for the one before.  The two events
+         * are just markers: the copy waits for contrib_done (contrib_kernel
+         * has finished), the host waits for contrib_copied (the copy has
+         * finished).  They measure no time, hence cudaEventDisableTiming. */
+        HANDLE_ERROR(cudaMallocHost(&h_contrib,    vector_bytes));
+        HANDLE_ERROR(cudaMallocHost(&h_host_ranks, host_bytes));
+        HANDLE_ERROR(cudaStreamCreate(&copy_stream));
+        HANDLE_ERROR(cudaEventCreateWithFlags(&contrib_done,   cudaEventDisableTiming));
+        HANDLE_ERROR(cudaEventCreateWithFlags(&contrib_copied, cudaEventDisableTiming));
+    }
 
-    /* Start from the uniform distribution 1/N */
+    /* Start from the uniform distribution 1/N, the CPU's rows as well */
     for (v = 0; v < n; v++) {
         rank[v] = (rank_t)(1.0 / (double)n);
+    }
+    for (i = 0; i < count[CLASS_HOST]; i++) {
+        h_host_ranks[i] = (rank_t)(1.0 / (double)n);
     }
     HANDLE_ERROR(cudaMemcpy(d_row_ptr, g->row_ptr, row_ptr_bytes, cudaMemcpyHostToDevice));
     HANDLE_ERROR(cudaMemcpy(d_col_idx, g->col_idx, col_idx_bytes, cudaMemcpyHostToDevice));
@@ -441,13 +572,17 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         HANDLE_ERROR(cudaMemcpy(d_rows, rows, rows_bytes, cudaMemcpyHostToDevice));
     }
     /* Each class gets its own kernel, over its own slice of d_rows, and as
-     * many blocks as its rows need: a row per thread, per warp, per block. */
-    class_rows[CLASS_THREAD] = d_rows;
-    class_rows[CLASS_WARP]   = NULL;
-    class_rows[CLASS_BLOCK]  = NULL;
+     * many blocks as its rows need: a row per thread, per warp, per block.
+     * The CPU's slice serves only to put its ranks back in place. */
+    for (c = 0; c < N_CLASSES; c++) {
+        class_rows[c] = NULL;
+    }
     if (d_rows != NULL) {   /* NULL when the thread class has every row */
-        class_rows[CLASS_WARP]  = d_rows + count[CLASS_THREAD];
-        class_rows[CLASS_BLOCK] = d_rows + count[CLASS_THREAD] + count[CLASS_WARP];
+        class_rows[CLASS_THREAD] = d_rows;
+        for (c = 1; c < N_CLASSES; c++) {
+            class_rows[c] = class_rows[c - 1] + count[c - 1];
+        }
+        host_rows = rows + (class_rows[CLASS_HOST] - d_rows);
     }
     grid_contrib       = grid_size((const void *)contrib_kernel, prop.multiProcessorCount,
                                    (n + BLOCK - 1) / BLOCK);
@@ -457,6 +592,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
                                    (count[CLASS_WARP] + BLOCK / WARP - 1) / (BLOCK / WARP));
     grid[CLASS_BLOCK]  = grid_size((const void *)gather_block_rows, prop.multiProcessorCount,
                                    count[CLASS_BLOCK]);
+    grid[CLASS_HOST]   = grid_size((const void *)scatter_host_ranks, prop.multiProcessorCount,
+                                   (count[CLASS_HOST] + BLOCK - 1) / BLOCK);
 
     /* The two device buffers alternate, by swapping the
      * pointers handed to the kernels. */
@@ -465,9 +602,24 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
 
     start = wall_seconds();
     for (iter = 1; iter <= params->max_iters; iter++) {
+        accum_t host_error = 0.0;
+
         HANDLE_ERROR(cudaMemsetAsync(d_scalars, 0, N_SCALARS * sizeof(accum_t), stream));
         contrib_kernel<<<grid_contrib, BLOCK, 0, stream>>>(n, d_out_deg, cur, d_contrib,
                                                            d_scalars);
+        if (count[CLASS_HOST] > 0) {
+            /* contrib, and the dangling mass with it, to the host.  The copy
+             * stream waits for contrib_kernel alone, not for the gather
+             * kernels queued after it: the copy engine moves the vector
+             * while the GPU gathers its own rows. */
+            HANDLE_ERROR(cudaEventRecord(contrib_done, stream));
+            HANDLE_ERROR(cudaStreamWaitEvent(copy_stream, contrib_done, 0));
+            HANDLE_ERROR(cudaMemcpyAsync(h_contrib, d_contrib, vector_bytes,
+                                         cudaMemcpyDeviceToHost, copy_stream));
+            HANDLE_ERROR(cudaMemcpyAsync(&h_scalars[SCALAR_DANGLING], &d_scalars[SCALAR_DANGLING],
+                                         sizeof(accum_t), cudaMemcpyDeviceToHost, copy_stream));
+            HANDLE_ERROR(cudaEventRecord(contrib_copied, copy_stream));
+        }
         /* An empty class launches nothing: a grid of zero blocks is an error. */
         if (count[CLASS_THREAD] > 0) {
             gather_thread_rows<<<grid[CLASS_THREAD], BLOCK, 0, stream>>>(
@@ -486,12 +638,30 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         }
         HANDLE_ERROR(cudaGetLastError());
 
+        if (count[CLASS_HOST] > 0) {
+            /* The kernels are queued and run on their own: the host is free
+             * to gather the CPU's rows, as soon as contrib has arrived.
+             * Their ranks go back behind the gather kernels, in time for the
+             * next contrib_kernel, which needs every node. */
+            HANDLE_ERROR(cudaEventSynchronize(contrib_copied));
+            host_error = gather_host_rows(g, count[CLASS_HOST], host_rows,
+                                          rank_base(n, d, h_scalars), d,
+                                          h_contrib, h_host_ranks);
+            HANDLE_ERROR(cudaMemcpyAsync(d_host_ranks, h_host_ranks, host_bytes,
+                                         cudaMemcpyHostToDevice, stream));
+            scatter_host_ranks<<<grid[CLASS_HOST], BLOCK, 0, stream>>>(
+                count[CLASS_HOST], class_rows[CLASS_HOST], d_host_ranks, nxt);
+            HANDLE_ERROR(cudaGetLastError());
+        }
+
         /* The host waits here for the whole iteration: it needs the error to
-         * decide whether to launch the next one. */
+         * decide whether to launch the next one.  The wait covers the copy
+         * of h_host_ranks too, which the next gather_host_rows() overwrites. */
         HANDLE_ERROR(cudaMemcpyAsync(h_scalars, d_scalars, N_SCALARS * sizeof(accum_t),
                                    cudaMemcpyDeviceToHost, stream));
         HANDLE_ERROR(cudaStreamSynchronize(stream));
-        error = h_scalars[SCALAR_ERROR];
+        /* The L1 change over all nodes: the GPU's rows plus the CPU's. */
+        error = h_scalars[SCALAR_ERROR] + host_error;
 
         tmp = cur;
         cur = nxt;
@@ -507,20 +677,35 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     HANDLE_ERROR(cudaMemcpy(rank, cur, vector_bytes, cudaMemcpyDeviceToHost));
 
     if (stats != NULL) {
-        stats->seconds    = seconds;
-        stats->iterations = converged ? iter : params->max_iters;
-        stats->error      = (double)error;
-        stats->converged  = converged;
+        stats->seconds      = seconds;
+        stats->iterations   = converged ? iter : params->max_iters;
+        stats->error        = (double)error;
+        stats->converged    = converged;
+        stats->host_rows    = count[CLASS_HOST];
+        stats->host_edges   = host_edges;
+        stats->host_min_len = host_min_len;
     }
     result = 0;
 
 out:
     /* cudaFree(NULL) is a no-op, like free(NULL). */
+    if (contrib_copied != NULL) {
+        cudaEventDestroy(contrib_copied);
+    }
+    if (contrib_done != NULL) {
+        cudaEventDestroy(contrib_done);
+    }
+    if (copy_stream != NULL) {
+        cudaStreamDestroy(copy_stream);
+    }
     if (stream != NULL) {
         cudaStreamDestroy(stream);
     }
+    cudaFreeHost(h_host_ranks);
+    cudaFreeHost(h_contrib);
     cudaFreeHost(h_scalars);
     cudaFree(d_scalars);
+    cudaFree(d_host_ranks);
     cudaFree(d_contrib);
     cudaFree(d_next);
     cudaFree(d_rank);

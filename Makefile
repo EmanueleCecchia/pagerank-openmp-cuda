@@ -9,8 +9,8 @@ BUILD    := build
 # point, so the warning about it is silenced.
 SEQFLAGS := -Wno-unknown-pragmas
 
-# GPU build, needs the CUDA Toolkit.  If nvcc is not installed, `make` skips
-# the GPU executables and builds only the CPU ones, instead of failing.
+# Hybrid build, needs the CUDA Toolkit.  If nvcc is not installed, `make`
+# skips the GPU executables and builds only the CPU ones, instead of failing.
 NVCC      ?= nvcc
 # GPU architecture to compile for.  native = the GPU of the machine where
 # you run make (the one the benchmarks then run on).  For a different GPU,
@@ -28,10 +28,12 @@ SEQ_OBJS := $(addprefix $(BUILD)/seq/,$(OBJS))
 OMP_OBJS := $(addprefix $(BUILD)/omp/,$(OBJS))
 FLT_OBJS := $(addprefix $(BUILD)/omp-float/,$(OBJS))
 
-# main.c and csr.c are shared; pagerank_cuda.cu replaces pagerank.c.
-CUDA_OBJS  := $(addprefix $(BUILD)/cuda/,csr.o main.o pagerank_cuda.o)
-CFLT_OBJS  := $(addprefix $(BUILD)/cuda-float/,csr.o main.o pagerank_cuda.o)
-CUDA_BINS  := $(BUILD)/pagerank_cuda $(BUILD)/pagerank_cuda_float
+# main.c and csr.c are shared; pagerank_cuda.cu replaces pagerank.c, and all
+# three are compiled with OpenMP as well, for the CPU's share of the gather.
+# No GPU-only executable: with -s 0 the hybrid one is that version.
+HYB_OBJS   := $(addprefix $(BUILD)/hybrid/,csr.o main.o pagerank_cuda.o)
+HFLT_OBJS  := $(addprefix $(BUILD)/hybrid-float/,csr.o main.o pagerank_cuda.o)
+CUDA_BINS  := $(BUILD)/pagerank_hybrid $(BUILD)/pagerank_hybrid_float
 
 all: $(BUILD)/csr_info $(BUILD)/pagerank_seq $(BUILD)/pagerank_omp \
      $(BUILD)/pagerank_omp_float
@@ -43,7 +45,7 @@ endif
 # Builds the GPU executables or fails saying why, whatever `all` decided.
 cuda: $(CUDA_BINS)
 
-$(BUILD) $(BUILD)/seq $(BUILD)/omp $(BUILD)/omp-float $(BUILD)/cuda $(BUILD)/cuda-float:
+$(BUILD) $(BUILD)/seq $(BUILD)/omp $(BUILD)/omp-float $(BUILD)/hybrid $(BUILD)/hybrid-float:
 	mkdir -p $@
 
 $(BUILD)/seq/%.o: src/%.c src/csr.h src/pagerank.h | $(BUILD)/seq
@@ -56,18 +58,20 @@ $(BUILD)/omp-float/%.o: src/%.c src/csr.h src/pagerank.h | $(BUILD)/omp-float
 	$(CC) $(CFLAGS) $(OMPFLAGS) -DPAGERANK_FLOAT -c $< -o $@
 
 # Two rules per GPU folder: make takes the one whose source exists, the .c
-# for the shared files and the .cu for the GPU implementation.
-$(BUILD)/cuda/%.o: src/%.c src/csr.h src/pagerank.h | $(BUILD)/cuda
-	$(CC) $(CFLAGS) -DPAGERANK_CUDA -c $< -o $@
+# for the shared files and the .cu for the GPU implementation.  nvcc hands
+# -fopenmp to the host compiler, which builds the OpenMP loop of
+# pagerank_cuda.cu.
+$(BUILD)/hybrid/%.o: src/%.c src/csr.h src/pagerank.h | $(BUILD)/hybrid
+	$(CC) $(CFLAGS) $(OMPFLAGS) -DPAGERANK_CUDA -c $< -o $@
 
-$(BUILD)/cuda/%.o: src/%.cu src/csr.h src/pagerank.h | $(BUILD)/cuda
-	$(NVCC) $(NVCCFLAGS) -DPAGERANK_CUDA -c $< -o $@
+$(BUILD)/hybrid/%.o: src/%.cu src/csr.h src/pagerank.h | $(BUILD)/hybrid
+	$(NVCC) $(NVCCFLAGS) -Xcompiler $(OMPFLAGS) -DPAGERANK_CUDA -c $< -o $@
 
-$(BUILD)/cuda-float/%.o: src/%.c src/csr.h src/pagerank.h | $(BUILD)/cuda-float
-	$(CC) $(CFLAGS) -DPAGERANK_CUDA -DPAGERANK_FLOAT -c $< -o $@
+$(BUILD)/hybrid-float/%.o: src/%.c src/csr.h src/pagerank.h | $(BUILD)/hybrid-float
+	$(CC) $(CFLAGS) $(OMPFLAGS) -DPAGERANK_CUDA -DPAGERANK_FLOAT -c $< -o $@
 
-$(BUILD)/cuda-float/%.o: src/%.cu src/csr.h src/pagerank.h | $(BUILD)/cuda-float
-	$(NVCC) $(NVCCFLAGS) -DPAGERANK_CUDA -DPAGERANK_FLOAT -c $< -o $@
+$(BUILD)/hybrid-float/%.o: src/%.cu src/csr.h src/pagerank.h | $(BUILD)/hybrid-float
+	$(NVCC) $(NVCCFLAGS) -Xcompiler $(OMPFLAGS) -DPAGERANK_CUDA -DPAGERANK_FLOAT -c $< -o $@
 
 $(BUILD)/pagerank_seq: $(SEQ_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDLIBS)
@@ -78,11 +82,11 @@ $(BUILD)/pagerank_omp: $(OMP_OBJS)
 $(BUILD)/pagerank_omp_float: $(FLT_OBJS)
 	$(CC) $(CFLAGS) $(OMPFLAGS) $^ -o $@ $(LDLIBS)
 
-$(BUILD)/pagerank_cuda: $(CUDA_OBJS)
-	$(NVCC) $(CUDA_ARCH) $(CUDA_WARN) $^ -o $@ $(LDLIBS)
+$(BUILD)/pagerank_hybrid: $(HYB_OBJS)
+	$(NVCC) $(CUDA_ARCH) $(CUDA_WARN) -Xcompiler $(OMPFLAGS) $^ -o $@ $(LDLIBS)
 
-$(BUILD)/pagerank_cuda_float: $(CFLT_OBJS)
-	$(NVCC) $(CUDA_ARCH) $(CUDA_WARN) $^ -o $@ $(LDLIBS)
+$(BUILD)/pagerank_hybrid_float: $(HFLT_OBJS)
+	$(NVCC) $(CUDA_ARCH) $(CUDA_WARN) -Xcompiler $(OMPFLAGS) $^ -o $@ $(LDLIBS)
 
 $(BUILD)/csr_info: $(BUILD)/seq/csr_info.o $(BUILD)/seq/csr.o
 	$(CC) $(CFLAGS) $^ -o $@
