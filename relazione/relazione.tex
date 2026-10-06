@@ -1412,6 +1412,14 @@ sovrapposizione fra trasferimenti e calcolo.}
     linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
     dal grafo; varrebbe la pena cercarlo, confrontando anche politiche come
     \texttt{guided}.
+  \item \nuovo{\textbf{Soglie della granularità adattiva.} Nella versione
+    ibrida la GPU dà un thread alle righe fino a 16 predecessori, un warp a
+    quelle fino a 256 e un blocco alle più lunghe (opzione \texttt{-b}).
+    Queste due soglie sono state fissate dopo poche prove, senza
+    un'analisi approfondita, e quelle migliori dipendono verosimilmente dal
+    grafo e dalla GPU: andrebbero cercate in modo sistematico, misurando il
+    gather al variare delle due soglie. Le soglie 4 e 32 della
+    Tabella~\ref{tab:bins} servono invece solo a illustrare l'idea.}
   \item \nuovo{\textbf{Bilanciamento automatico della quota.} Nella versione
     ibrida la quota di archi assegnata alla CPU è un parametro
     (\texttt{-s}), e la migliore è quella con cui CPU e GPU finiscono il
