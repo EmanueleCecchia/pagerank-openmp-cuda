@@ -9,6 +9,12 @@
 # of another machine by accident:
 #   MACHINE=machine2 tools/run_benchmarks.sh
 #
+# It may name a sub-folder too: on a machine with more than one GPU the CPU
+# builds go in the machine's folder, and the hybrid one in a folder per GPU,
+# picked with CUDA_VISIBLE_DEVICES:
+#   MACHINE=machine3 BUILDS="seq omp" tools/run_benchmarks.sh
+#   CUDA_VISIBLE_DEVICES=0 MACHINE=machine3/x16 BUILDS=hybrid tools/run_benchmarks.sh
+#
 # Every configuration is run REPS times because a single timing on a laptop is
 # noise; take the minimum per configuration when building the tables, since
 # the fastest run is the one least disturbed by other activity.
@@ -61,7 +67,7 @@ THREADS=${THREADS:-$(default_threads)}
 # Shares of the edges for the CPU in the hybrid build, each one measured and
 # recorded: 0 is the GPU alone, 1 the CPU alone but for contrib_kernel and
 # the rows with no in-neighbours.
-SHARES=${SHARES:-"0 0.25 0.5 0.75 1"}
+SHARES=${SHARES:-"0 0.05 0.1 0.25 0.5 0.75 1"}
 REPS=${REPS:-3}
 DATA=${DATA:-data/snap}
 OUT=${OUT:-results/$MACHINE}

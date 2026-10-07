@@ -18,6 +18,7 @@ the measurements are in [`relazione/relazione.pdf`](relazione/relazione.pdf)
 | correctness check | `networkx`, `scipy` |
 | figures | `matplotlib` |
 | hybrid version | CUDA Toolkit (`nvcc`) |
+| benchmark sweep | Linux, `bash`, `nproc`, `lscpu`; optionally Nsight Systems (`nsys`), to profile the hybrid runs |
 
 To create the conda environment:
 
@@ -170,8 +171,10 @@ grep -v '^#' ranks.txt | sort -k2 -g -r | head
 
 `-c` appends one row per run to a CSV — graph, nodes, edges, build,
 precision, threads, damping, tolerance, iterations, converged, seconds total,
-seconds per iteration, rank sum, share of the edges gathered by the CPU (the
-`-s` of the hybrid builds, 1 for the CPU ones), classes (the `-b` of the
+seconds per iteration, rank sum, share of the edges asked of the CPU (the
+`-s` of the hybrid builds, 1 for the CPU ones; the CPU takes whole row
+lengths at a time, so the share it actually gets can be smaller, and the
+standard output and the `-o` header report it), classes (the `-b` of the
 hybrid builds, as `16/256`; empty for the CPU ones) — writing the header only
 when the file is created, so a sweep builds its own results table:
 
@@ -224,8 +227,10 @@ the sequential, three repetitions each, and writes:
 The OpenMP thread counts follow the CPU: the powers of two up to the logical
 CPUs, plus the physical cores and the logical CPUs themselves (ex. 1/2/4/8 on the
 4-core/8-thread machine). The hybrid build runs on every logical CPU, once for
-each share of the edges for the CPU: 0 (the GPU alone), 0.25, 0.5, 0.75 and 1
-(the CPU alone but not as in `OpenMP`).
+each share of the edges for the CPU: 0 (the GPU alone), 0.05, 0.1, 0.25, 0.5, 0.75
+and 1 (every row with in-neighbours on the CPU; not the same as the OpenMP
+build, since the GPU still computes `contrib` and the vectors still cross
+the bus at every iteration).
 Settings can be overridden from the environment — `GRAPHS`, `BUILDS`,
 `THREADS`, `SHARES`, `REPS`, `DATA`, `OUT`:
 
@@ -240,6 +245,21 @@ replaces the rows of `bench.csv` it measures again:
 MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
 MACHINE=machine1 BUILDS=hybrid SHARES=1 tools/run_benchmarks.sh
 ```
+
+`MACHINE` may name a sub-folder too, which keeps apart the GPUs of a machine
+that has more than one: the CPU builds are measured once, in the machine's
+folder, and the hybrid one once per GPU, picked with `CUDA_VISIBLE_DEVICES`,
+in a folder of its own. That is how `results/` is laid out for Machine 3,
+whose two RTX 2080 Ti sit on a PCIe x16 and an x8 link:
+
+```bash
+MACHINE=machine3 BUILDS="seq omp" tools/run_benchmarks.sh
+CUDA_VISIBLE_DEVICES=0 MACHINE=machine3/x16 BUILDS=hybrid tools/run_benchmarks.sh
+CUDA_VISIBLE_DEVICES=1 MACHINE=machine3/x8  BUILDS=hybrid tools/run_benchmarks.sh
+```
+
+and for Machine 2, one folder per GPU (`gtx1080ti`, `rtx2080ti`), with
+hybrid runs only.
 
 When `nsys` is installed, every run of the hybrid build goes under it,
 tracing the CUDA calls only, and its report is kept in
@@ -263,12 +283,14 @@ python3 tools/locality_stats.py data/snap/*.csr
 
 `plot_results.py` turns the `results/<machine>/bench.csv` files into two figures,
 speed-up and parallel efficiency, in `relazione/figure/`, with one curve per
-machine in each.
+machine in each. Without `--machine` it takes the folders right under
+`results/` that have a `bench.csv`, which is where the CPU builds are.
 To pick or rename them, give one `--machine` per machine, with its folder or CSV:
 `--machine "Laptop 4c/8t" results/machine1 --machine "Workstation 12c/24t" results/machine3`.
 `hybrid_table.py` prints the times of the hybrid build, one row per graph and
 one column per share of the edges for the CPU, next to the best OpenMP time
-of the same machine.
+in the same `bench.csv`: in a GPU's own sub-folder there is none, and that
+column shows `-`.
 `nsys_phases.py` rebuilds `nsys_phases.csv` from the reports, without running
 anything.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
@@ -285,7 +307,8 @@ the MiB one iteration asks for.
   sweep, figures, table of the hybrid times, phases of the hybrid iterations,
   locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF
-- `results/` — one folder per machine, with `bench.csv` (every run) and the
-  gitignored rank vectors;
+- `results/` — one folder per machine, and inside it one per GPU when the
+  machine has more than one: `bench.csv` (every run), `nsys_phases.csv` (the
+  phases of the hybrid runs), and the gitignored rank vectors and nsys reports
 - `data/` — the datasets (gitignored)
 - `build/` — the executables (gitignored)
