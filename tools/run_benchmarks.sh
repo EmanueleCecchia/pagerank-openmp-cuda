@@ -95,9 +95,11 @@ mkdir -p "$OUT"
 # Drop the rows this sweep is about to measure again, keep every other one.
 # The graph column holds the .csr path, so the graph is its last component;
 # the hybrid rows also match on the share, column 14, compared as numbers so
-# that 0.50 is 0.5.
+# that 0.50 is 0.5.  In the C locale: with a decimal comma in LC_NUMERIC
+# (es_ES, it_IT) mawk reads 0.25 as 0, every share below 1 matches 0, and
+# measuring 0.05 alone would drop the rows of 0, 0.25, 0.5 and 0.75 too.
 if [ -f "$CSV" ]; then
-    awk -F, -v graphs="$GRAPHS" -v builds="$BUILDS" -v shares="$SHARES" '
+    LC_ALL=C awk -F, -v graphs="$GRAPHS" -v builds="$BUILDS" -v shares="$SHARES" '
         BEGIN { split(graphs, g, " "); for (i in g) G[g[i] ".csr"] = 1
                 split(builds, b, " "); for (i in b) B[b[i]] = 1
                 split(shares, s, " "); for (i in s) S[s[i] + 0] = 1 }
