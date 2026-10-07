@@ -123,9 +123,16 @@ fi
 # CUDA calls only: sampling the CPU would slow down the runs where the CPU
 # does most of the work.  The report is the very run whose time goes in
 # bench.csv.
+# --show-output=false keeps the program's output in the report only: to echo
+# it on the console nsys 2022-2023 starts nsys-tee, which spins on a CPU of
+# its own, and with every logical CPU running an OpenMP thread the barrier of
+# the CPU's gather waits for the thread left without one -- on Machine 2 that
+# added ~0.1 s to every run with a CPU share.  The output goes to /dev/null
+# here anyway.
 run_hybrid() {    # executable precision share repetition
     if [ -n "$NSYS" ]; then
         OMP_NUM_THREADS=$(nproc) "$NSYS" profile --trace=cuda --sample=none --cpuctxsw=none \
+            --show-output=false \
             --force-overwrite true -o "$NSYS_DIR/$graph-$2-s$3-r$4" \
             "$1" "$csr" -s "$3" -c "$CSV" >/dev/null
     else
