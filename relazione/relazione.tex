@@ -85,7 +85,7 @@ saturazione oltre il numero di core fisici che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
 
-La versione ibrida è stata misurata su quattro GPU di tre macchine. 
+La versione ibrida è stata misurata su quattro GPU di tre macchine.
 Da sola, una RTX 2080 Ti è da $1{,}4$ a $2{,}9$ volte più veloce dei 24 thread
 della CPU a 12 core. Dividere il lavoro fra CPU e GPU conviene quando le due,
 usate da sole, impiegano tempi simili: su un portatile, dove una GTX 1050 Ti
@@ -291,9 +291,12 @@ necessario distribuire il calcolo su più unità di elaborazione.
 % =====================================================================
 
 \subsection{Struttura del codice}
-Il progetto si compone di nove moduli, dei quali due soli formano il
-programma di calcolo vero e proprio: \texttt{src/pagerank.c}, che contiene il
-nucleo cronometrato, e \texttt{src/csr.c}, che porta il grafo in memoria prima
+Il progetto si compone di tredici moduli, dei quali tre soli formano il
+programma di calcolo vero e proprio: \texttt{src/pagerank.c}
+e \texttt{src/pagerank\_cuda.cu}, che contengono il
+nucleo cronometrato --- il primo nelle versioni sequenziale e OpenMP, il
+secondo in quelle solo GPU e ibrida, e ogni eseguibile ne usa uno solo ---,
+e \texttt{src/csr.c}, che porta il grafo in memoria prima
 che il cronometro parta. Gli altri preparano i dati, guidano l'esecuzione o
 servono a controllare i risultati.
 \begin{center}
@@ -303,13 +306,17 @@ servono a controllare i risultati.
 \midrule
 \texttt{tools/snap\_to\_csr.py}       & conversione SNAP $\to$ CSR binario \\
 \texttt{src/csr.c},\ \texttt{csr.h}   & caricamento e validazione \\
-\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo \\
+\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo sequenziale e OpenMP; interfaccia comune \\
+\texttt{src/pagerank\_cuda.cu}        & nucleo di calcolo delle versioni solo GPU e ibrida \\
 \texttt{src/main.c}                   & programma principale, output, log dei tempi \\
 \texttt{src/csr\_info.c}              & statistiche di un grafo convertito \\
 \texttt{tools/verify\_pagerank.py}    & verifica indipendente \\
 \texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
 \texttt{tools/plot\_results.py}       & figure di scalabilità \\
 \texttt{tools/locality\_stats.py}     & statistiche di località del gather \\
+\texttt{tools/nsys\_phases.py}       & fasi delle iterazioni ibride, dai profili \texttt{nsys} \\
+\texttt{tools/hybrid\_table.py}      & tabella dei tempi della versione ibrida \\
+\texttt{tools/plot\_hybrid.py}       & figura della versione ibrida \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -673,8 +680,7 @@ memoria, e condividono un unico tipo, definito da un \texttt{typedef} che si
 può cambiare in fase di compilazione con \texttt{-DPAGERANK\_FLOAT}. La
 motivazione è che sulle GPU di fascia consumer
 l'aritmetica FP32 (\texttt{float}, 4 byte) è nettamente più veloce della FP64
-(\texttt{double}, 8 byte). Il kernel CUDA richiederà perciò verosimilmente
-\texttt{float}; mantenere entrambe le varianti raggiungibili dallo stesso
+(\texttt{double}, 8 byte). Mantenere entrambe le varianti raggiungibili dallo stesso
 sorgente permette di confrontarne accuratezza e velocità.
 
 Gli accumulatori --- \texttt{accum\_t} nel codice --- restano invece sempre in
