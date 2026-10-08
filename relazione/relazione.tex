@@ -780,53 +780,116 @@ dispari.
 \subsection{Implementazione ibrida OpenMP + CUDA}
 \label{sec:cuda}
 
-\daFare{Sezione da scrivere interamente. Dovrà documentare:
-partizionamento del carico fra $V_{host}$ e $V_{device}$ in base al grado
-dei nodi; copiare i dati sulla GPU mentre il calcolo è già in corso,
-usando stream creati esplicitamente e \texttt{cudaMemcpyAsync};
-combinazione dell'errore di convergenza calcolato su CPU e GPU;
-dimensionamento di griglia e blocchi a runtime tramite
-\texttt{cudaGetDeviceProperties} e \texttt{cudaMemGetInfo}, come richiesto
-dal requisito di portabilità; granularità adattiva (un thread, un warp o un
-blocco per riga a seconda della sua lunghezza).}
+La versione ibrida sta in un solo file, \texttt{src/pagerank\_cuda.cu},
+che nella build ibrida prende il posto di \texttt{pagerank.c}: definisce la
+stessa funzione \texttt{pagerank()}, così che \texttt{main.c} e \texttt{csr.c}
+restino quelli delle altre versioni. Lo compila \texttt{nvcc}, che passa
+\texttt{-fopenmp} al compilatore dell'host per la parte di lavoro che resta
+alla CPU. I due cicli dell'Algoritmo~\ref{alg:seq} diventano kernel CUDA, e una
+parte delle righe del secondo, le più lunghe, la calcolano i thread OpenMP.
+Con l'opzione \texttt{-s 0} la CPU non riceve righe: è la versione solo GPU,
+lo stesso codice senza copie in più a ogni iterazione e senza avviare i thread
+OpenMP, che per questo non ha un eseguibile a sé. Per le chiamate CUDA
+viene usata la macro \texttt{HANDLE\_ERROR}, che ferma il programma al primo
+errore indicandone il punto.
+
+\paragraph{Il grafo sulla GPU.}
+I tre array del CSR e i vettori \texttt{cur}, \texttt{nxt} e
+\texttt{contrib} sono allocati in memoria globale con \texttt{cudaMalloc}. Il
+grafo viene copiato una volta sola, prima che il cronometro parta, e i rank
+tornano all'host una volta sola, dopo che si è fermato
+(Sezione~\ref{sec:misura}); fra un'iterazione e l'altra i due vettori dei rank
+si alternano scambiando i puntatori passati ai kernel, come nella versione per
+CPU. Prima di allocare, il programma chiede al runtime la memoria libera
+(\texttt{cudaMemGetInfo}) e la confronta con quella che servirà: per
+\texttt{soc-LiveJournal1} in doppia precisione circa 450~MiB, l'11\,\% dei
+4~GiB della GPU più piccola fra quelle usate. Se non basta si ferma dicendo
+quanta ne serve.
+
+\paragraph{Il primo ciclo e le riduzioni.}
+Il calcolo dei contributi diventa \texttt{contrib\_kernel}, un thread
+per nodo. Come tutti i kernel del file è scritto con un ciclo
+\emph{grid-stride}: ogni thread tratta il nodo $v$, poi $v$ più il numero di
+thread della griglia, e così via, così che la griglia possa essere
+dimensionata sulla GPU anziché sul grafo. La dangling mass è una riduzione, come nella
+versione OpenMP: ogni thread accumula la sua
+parte in un registro; i 32 thread di un warp la sommano in cinque passi con
+\texttt{\_\_shfl\_down\_sync}, senza passare dalla memoria; i totali degli 8
+warp del blocco passano per la shared memory, separati da
+\texttt{\_\_syncthreads}, e li somma il warp~0; infine un solo thread per
+blocco aggiunge il totale del blocco a una variabile in memoria globale con
+\texttt{atomicAdd}. Un'operazione atomica per blocco e non per thread, perché
+migliaia di thread in coda sullo stesso indirizzo serializzerebbero gli
+aggiornamenti.
+
 
 \paragraph{Perché una granularità variabile.}
 La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info.c},
 è riportata in Tabella~\ref{tab:bins}, e le sue due metà dicono cose
-opposte. Nei grafi utilizzati, \texttt{wiki-Vote} a parte, fra il 31 e
-l'88\,\% delle righe contiene al più 4 elementi, ma quelle righe valgono
-appena il 3,5--29\,\% degli archi; le righe oltre i 32 elementi sono al più il
-18\,\% e ne raccolgono dal 40 al 68\,\%, con singole righe che arrivano a
-centinaia di migliaia di predecessori. Fa eccezione \texttt{cit-Patents}, che
-non ha hub: due terzi dei suoi archi stanno in righe da 5 a 32 elementi, e
-quelle più lunghe ne raccolgono appena il 9\,\%.
+opposte. La tabella la divide nelle tre classi in cui la GPU mette le
+righe con le soglie di default: fino a 16 predecessori, da 17 a 256 e oltre
+256. Nei grafi utilizzati fra il 67 e il 96\,\% delle righe ha al più 16
+elementi, ma quelle righe valgono, \texttt{cit-Patents} a parte, dal 5 al
+44\,\% degli archi; le righe oltre i 256 elementi sono al più lo 0,6\,\% e ne
+raccolgono fino al 46\,\%, con singole righe che arrivano a centinaia di
+migliaia di predecessori. Le righe da 17 a 256 elementi portano invece il
+grosso del lavoro sui grafi sociali, l'81\,\% degli archi su
+\texttt{soc-Pokec}. Fa eccezione \texttt{cit-Patents}, che non ha hub: tre
+quarti dei suoi archi stanno in righe fino a 16 elementi, e quelle oltre 256
+ne raccolgono appena lo 0,1\,\%.
 Queste considerazioni vanno a giustificare la scelta:
 le righe vengono raggruppate per lunghezza, così che un warp o un blocco 
 riceva righe di dimensione simile e nessun thread resti inattivo ad aspettare 
 gli altri.
 
+\stacco
+La Figura~\ref{fig:predecessori} mostra la stessa distribuzione nodo per
+nodo. Il numero di nodi cala di ordini di grandezza al crescere dei
+predecessori, ma la coda arriva a migliaia o a decine di migliaia di
+predecessori, oltre i 100\,000 su \texttt{wiki-topcats}; solo
+\texttt{cit-Patents} si ferma sotto i mille. Nella coda molti valori hanno un
+solo nodo, e i loro punti si allineano sull'1: sono gli hub. Su
+\texttt{soc-Pokec} la curva si
+piega presto verso il basso, e pochissimi nodi superano il migliaio di
+predecessori.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figure/predecessori.pdf}
+\caption{Nodi per numero di predecessori, cioè per lunghezza della loro riga
+nel CSR trasposto, su assi logaritmici: un punto per ogni numero di
+predecessori presente nel grafo. Il colore è la
+classe in cui la GPU mette quelle righe con le soglie di default, 16 e 256,
+segnate dalle linee punteggiate (Tabella~\ref{tab:bins}). I nodi senza
+predecessori non compaiono. Figura generata da
+\texttt{tools/plot\_degrees.py}.}
+\label{fig:predecessori}
+\end{figure}
+
 \begin{table}[h]
 \centering
-\caption{Distribuzione delle lunghezze di riga (predecessori per nodo): 
-quota percentuale di nodi e di archi per classe.}
+\caption{Distribuzione delle lunghezze di riga (predecessori per nodo) nelle
+tre classi della GPU, con le soglie di default: quota percentuale di nodi e di
+archi per classe. Le righe vuote stanno nella classe dei thread. Valori
+misurati da \texttt{csr\_info.c}.}
 \label{tab:bins}
-\begin{tabular}{@{}lrrrrrrrr@{}}
+\begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
-& \textbf{0} & \multicolumn{2}{c}{\textbf{1--4}} &
-\multicolumn{2}{c}{\textbf{5--32}} & \multicolumn{2}{c}{\textbf{>32}} & \\
-\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
-\textbf{Grafo} & nodi & nodi & archi & nodi & archi & nodi & archi &
-\textbf{max} \\
+& \multicolumn{2}{c}{\textbf{thread (0--16)}} &
+\multicolumn{2}{c}{\textbf{warp (17--256)}} &
+\multicolumn{2}{c}{\textbf{blocco (>256)}} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+\textbf{Grafo} & nodi & archi & nodi & archi & nodi & archi & \textbf{max} \\
 \midrule
-wiki-Vote        & 66,5 & 3,0  & 0,5  & 12,9 & 14,8 & 17,6 & 84,8 & 457 \\
-web-NotreDame    & 0,0  & 87,6 & 29,2 & 10,1 & 24,0 & 2,3  & 46,8 & 10\,721 \\
-web-Stanford     & 7,2  & 70,3 & 17,8 & 20,6 & 26,8 & 1,9  & 55,4 & 38\,606 \\
-web-Google       & 18,4 & 56,7 & 16,4 & 22,3 & 43,2 & 2,6  & 40,4 & 6\,326 \\
-web-BerkStan     & 9,9  & 64,2 & 11,5 & 22,6 & 21,5 & 3,3  & 67,0 & 84\,208 \\
-cit-Patents      & 13,7 & 56,5 & 25,9 & 29,0 & 65,0 & 0,8  & 9,1  & 779 \\
-wiki-topcats     & 0,0  & 58,4 & 7,4  & 35,0 & 24,6 & 6,6  & 67,9 & 238\,040 \\
-soc-Pokec        & 6,9  & 31,4 & 3,5  & 43,7 & 33,4 & 18,0 & 63,1 & 13\,733 \\
-soc-LiveJournal1 & 7,4  & 45,2 & 6,2  & 36,7 & 33,8 & 10,7 & 60,0 & 13\,906 \\
+wiki-Vote        & 76,4 & 5,2  & 23,5 & 91,5 & 0,2 & 3,3  & 457 \\
+web-NotreDame    & 95,8 & 43,1 & 4,2  & 45,2 & 0,1 & 11,7 & 10\,721 \\
+web-Stanford     & 94,7 & 35,0 & 5,1  & 24,3 & 0,2 & 40,6 & 38\,606 \\
+web-Google       & 93,1 & 43,5 & 6,8  & 43,8 & 0,1 & 12,7 & 6\,326 \\
+web-BerkStan     & 93,3 & 25,9 & 6,4  & 28,4 & 0,3 & 45,7 & 84\,208 \\
+cit-Patents      & 95,8 & 74,0 & 4,2  & 25,9 & 0,0 & 0,1  & 779 \\
+wiki-topcats     & 86,7 & 22,5 & 12,7 & 37,9 & 0,6 & 39,6 & 238\,040 \\
+soc-Pokec        & 66,7 & 17,7 & 33,3 & 80,8 & 0,1 & 1,5  & 13\,733 \\
+soc-LiveJournal1 & 78,8 & 22,8 & 20,9 & 66,8 & 0,3 & 10,4 & 13\,906 \\
 \bottomrule
 \end{tabular}
 \end{table}
