@@ -43,9 +43,12 @@ MAGIC = b"PRCSR001"
 PTR_DTYPE = np.uint64  # row_ptr
 IDX_DTYPE = np.uint32  # col_idx, out_deg
 
-# Row-length bins for the adaptive CUDA granularity: one thread per row for
-# short rows, one warp for medium rows, one block for the long power-law tail.
-BINS = ((1, 4, "1-4  (thread/row)"), (5, 32, "5-32 (warp/row)  "), (33, None, ">32  (block/row) "))
+# Row-length classes of the CUDA kernel at the default thresholds of -b
+# (src/pagerank.h): one thread per row up to 16 in-neighbours, one warp up to
+# 256, one block for the long power-law tail.  Empty rows fall in the thread
+# class, as in the kernel.  Must match the bins of src/csr_info.c.
+BINS = ((0, 16, "0-16   (thread/row)"), (17, 256, "17-256 (warp/row)  "),
+        (257, None, ">256   (block/row) "))
 
 
 def read_edges(path):
