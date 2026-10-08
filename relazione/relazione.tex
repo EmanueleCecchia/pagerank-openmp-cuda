@@ -66,13 +66,15 @@
 \section*{Abstract}
 % =====================================================================
 Il progetto implementa e analizza l'algoritmo PageRank su architetture
-parallele, confrontando tre versioni: una sequenziale, che fa da
-riferimento per ogni misura di speed-up, una puramente multicore basata su
-OpenMP e una ibrida che distribuisce il carico fra CPU e GPU tramite CUDA.
+parallele, confrontando quattro versioni: una sequenziale, che fa da
+riferimento per ogni misura di speed-up, una basata su OpenMP,
+una che usa la sola GPU e una ibrida che distribuisce il carico fra CPU e GPU.
 Sequenziale e OpenMP condividono lo stesso file sorgente e differiscono
 solo per le opzioni di compilazione, così che il riferimento non possa
 divergere dal codice parallelo né essere falsato dai costi di gestione dei
-thread. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
+thread. Allo stesso modo, la versione solo GPU è quella ibrida senza
+lavoro per la CPU: le due condividono l'eseguibile, e le distingue
+un'opzione a tempo di esecuzione. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
 implementazioni indipendenti. Le misure sulla versione OpenMP, condotte su
@@ -83,8 +85,14 @@ saturazione oltre il numero di core fisici che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
 
-\daFare{Aggiornare l'abstract con i risultati CUDA una volta completata la
-fase ibrida.}
+La versione ibrida è stata misurata su quattro GPU di tre macchine. 
+Da sola, una RTX 2080 Ti è da $1{,}4$ a $2{,}9$ volte più veloce dei 24 thread
+della CPU a 12 core. Dividere il lavoro fra CPU e GPU conviene quando le due,
+usate da sole, impiegano tempi simili: su un portatile, dove una GTX 1050 Ti
+e 4 core vanno quasi alla pari, la versione ibrida è fino a $1{,}8$ volte più
+veloce della più rapida fra le due. Con GPU più veloci conviene quasi sempre lasciare
+tutto alla GPU, perché a ogni iterazione la CPU deve ricevere l'intero vettore
+dei contributi, e quella copia costa più del lavoro che la CPU restituisce.
 
 \tableofcontents
 \newpage
