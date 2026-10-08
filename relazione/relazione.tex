@@ -291,7 +291,7 @@ necessario distribuire il calcolo su più unità di elaborazione.
 % =====================================================================
 
 \subsection{Struttura del codice}
-Il progetto si compone di tredici moduli, dei quali tre soli formano il
+Il progetto si compone di quattordici moduli, dei quali tre soli formano il
 programma di calcolo vero e proprio: \texttt{src/pagerank.c}
 e \texttt{src/pagerank\_cuda.cu}, che contengono il
 nucleo cronometrato --- il primo nelle versioni sequenziale e OpenMP, il
@@ -314,9 +314,10 @@ servono a controllare i risultati.
 \texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
 \texttt{tools/plot\_results.py}       & figure di scalabilità \\
 \texttt{tools/locality\_stats.py}     & statistiche di località del gather \\
-\texttt{tools/nsys\_phases.py}       & fasi delle iterazioni ibride, dai profili \texttt{nsys} \\
-\texttt{tools/hybrid\_table.py}      & tabella dei tempi della versione ibrida \\
-\texttt{tools/plot\_hybrid.py}       & figura della versione ibrida \\
+\texttt{tools/nsys\_phases.py}        & fasi delle iterazioni ibride, dai profili \texttt{nsys} \\
+\texttt{tools/hybrid\_table.py}       & tabella dei tempi della versione ibrida \\
+\texttt{tools/plot\_hybrid.py}        & figura della versione ibrida \\
+\texttt{tools/plot\_degrees.py}       & figura e tabella delle classi di righe \\
 \bottomrule
 \end{tabular}
 \end{center}
