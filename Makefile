@@ -29,7 +29,8 @@ OMP_OBJS := $(addprefix $(BUILD)/omp/,$(OBJS))
 FLT_OBJS := $(addprefix $(BUILD)/omp-float/,$(OBJS))
 
 # main.c and csr.c are shared; pagerank_cuda.cu replaces pagerank.c, and all
-# three are compiled with OpenMP as well, for the CPU's share of the gather.
+# three are compiled with OpenMP as well, for the CPU's share of the
+# accumulation.
 # No GPU-only executable: with -s 0 the hybrid one is that version.
 HYB_OBJS   := $(addprefix $(BUILD)/hybrid/,csr.o main.o pagerank_cuda.o)
 HFLT_OBJS  := $(addprefix $(BUILD)/hybrid-float/,csr.o main.o pagerank_cuda.o)

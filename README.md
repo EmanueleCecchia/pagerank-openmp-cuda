@@ -145,7 +145,7 @@ machine with more than one, `CUDA_VISIBLE_DEVICES` picks it:
 CUDA_VISIBLE_DEVICES=1 ./build/pagerank_hybrid data/snap/web-Google.csr
 ```
 
-In the hybrid builds the CPU gathers the longest rows, from the longest down
+In the hybrid builds the CPU accumulates the longest rows, from the longest down
 until they hold the share of the edges `-s` asks for, and the GPU the others;
 the output says which rows the CPU took. `-s 0` gives the CPU
 nothing, and is the GPU-only version: the same code, with nothing to copy
@@ -269,8 +269,8 @@ tracing the CUDA calls only, and its report is kept in
 `results/<machine>/nsys/` (gitignored; to look at one, open it with
 `nsys-ui`, the graphical viewer of Nsight Systems). At the end
 `tools/nsys_phases.py` reads from each report how that
-run's iterations split up — the GPU's gather, the copy of `contrib` to the
-host, the CPU's gather, the ranks going back, the waits — and writes
+run's iterations split up — the GPU's accumulation, the copy of `contrib` to
+the host, the CPU's accumulation, the ranks going back, the waits — and writes
 `results/<machine>/nsys_phases.csv`, one row for every hybrid row of
 `bench.csv`, from the very same run, with its time copied for checking.
 The profiler costs about 1% of the time. `NSYS=` runs without it.
@@ -309,7 +309,8 @@ column shows `-`.
 `nsys_phases.py` rebuilds `nsys_phases.csv` from the reports, without running
 anything.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
-the cache lines the gather touches: their count, per edge and per line, and
+the cache lines the scattered reads of `contrib` touch: their count, per edge
+and per line, and
 the MiB one iteration asks for.
 
 ## Project structure

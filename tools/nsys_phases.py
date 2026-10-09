@@ -12,18 +12,19 @@ is copied from that row, so the two files can be checked against each other.
 
 Every iteration of the hybrid build goes like this: contrib_kernel on the
 GPU; the copy of contrib to the host on a second stream, while the GPU runs
-the gather kernels of its own rows; the CPU waits for that copy, gathers its
+the accumulate kernels of its own rows; the CPU waits for that copy,
+accumulates its
 rows, sends their ranks back (one copy and scatter_host_ranks) and waits for
 the GPU.  The columns are the length of each of these phases, in ms, each
 the median over the iterations (the first and the last left out):
 
   iter_ms          one iteration, from a contrib_kernel to the next
   contrib_ms       contrib_kernel
-  gpu_gather_ms    the gather kernels, first start to last end
+  gpu_accumulate_ms the accumulate kernels, first start to last end
   copy_ms, copy_mb the copy of contrib to the host     (CPU rows only)
   copy_gbs         its bandwidth                        (CPU rows only)
   wait_copy_ms     the host waiting for that copy       (CPU rows only)
-  cpu_gather_ms    the CPU gathering its rows           (CPU rows only)
+  cpu_accumulate_ms the CPU accumulating its rows      (CPU rows only)
   back_ms, back_mb the copy of the CPU's ranks back     (CPU rows only)
   scatter_ms       scatter_host_ranks                   (CPU rows only)
   wait_gpu_ms      the host waiting for the GPU at the end of the iteration
@@ -32,8 +33,11 @@ plus, once per run, outside the timed loop: upload_ms and upload_mb, the
 graph going to the GPU, and download_ms, the ranks coming back.
 
 The host phases come from the CUDA calls nsys records on the host:
-cpu_gather_ms is the time between the end of the wait for the copy and the
-call that sends the ranks back, which is when gather_host_rows() runs.
+cpu_accumulate_ms is the time between the end of the wait for the copy and
+the call that sends the ranks back, which is when accumulate_host_rows()
+runs.  The kernels are recognised by either name, accumulate_* or the
+gather_* they had before the rename, so the reports already recorded still
+work.
 
 Usage: python3 tools/nsys_phases.py results/machine1 [--nsys /path/to/nsys]
 """
@@ -50,8 +54,8 @@ from collections import defaultdict
 from pathlib import Path
 
 COLUMNS = ["graph", "precision", "cpu_share", "rep", "seconds_total", "iterations",
-           "iter_ms", "contrib_ms", "gpu_gather_ms", "copy_ms", "copy_mb", "copy_gbs",
-           "wait_copy_ms", "cpu_gather_ms", "back_ms", "back_mb", "scatter_ms",
+           "iter_ms", "contrib_ms", "gpu_accumulate_ms", "copy_ms", "copy_mb", "copy_gbs",
+           "wait_copy_ms", "cpu_accumulate_ms", "back_ms", "back_mb", "scatter_ms",
            "wait_gpu_ms", "upload_ms", "upload_mb", "download_ms"]
 REPORT = re.compile(r"^(?P<graph>.+)-(?P<precision>double|float)-s(?P<share>[\d.]+)-r(?P<rep>\d+)$")
 H2D, D2H = 1, 2   # copyKind in the nsys export
@@ -98,13 +102,14 @@ def phases(calls, ops):
         window = calls[launches[k]:launches[k + 1]]
         mine = [(call, ops[call[3]]) for call in window if call[3] in ops]
         kernels = {op[2]: op for _, op in mine if op[3] == 0}
-        gathers = [op for _, op in mine if op[3] == 0 and op[2].startswith("gather_")]
+        accum = [op for _, op in mine if op[3] == 0
+                 and op[2].startswith(("accumulate_", "gather_"))]
         row = {
             "iter_ms": ms(ops[calls[launches[k + 1]][3]][0] - kernels["contrib_kernel"][0]),
             "contrib_ms": ms(kernels["contrib_kernel"][1] - kernels["contrib_kernel"][0]),
             # none at -s 1 on a graph where every node has in-neighbours
-            "gpu_gather_ms": ms(max(op[1] for op in gathers) - min(op[0] for op in gathers))
-                             if gathers else 0.0,
+            "gpu_accumulate_ms": ms(max(op[1] for op in accum) - min(op[0] for op in accum))
+                                 if accum else 0.0,
         }
         copies = [op for _, op in mine if op[2] == "D2H"]
         sends = [(call, op) for call, op in mine if op[2] == "H2D"]
@@ -118,7 +123,7 @@ def phases(calls, ops):
                 "copy_mb": copy[3] / 1e6,
                 "copy_gbs": copy[3] / (copy[1] - copy[0]),
                 "wait_copy_ms": ms(event_sync[0][1] - event_sync[0][0]),
-                "cpu_gather_ms": ms(send_call[0] - event_sync[0][1]),
+                "cpu_accumulate_ms": ms(send_call[0] - event_sync[0][1]),
                 "back_ms": ms(send[1] - send[0]),
                 "back_mb": send[3] / 1e6,
                 "scatter_ms": ms(kernels["scatter_host_ranks"][1]
