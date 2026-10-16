@@ -313,7 +313,7 @@ servono a controllare i risultati.
 \texttt{tools/verify\_pagerank.py}    & verifica indipendente \\
 \texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
 \texttt{tools/plot\_results.py}       & figure di scalabilità \\
-\texttt{tools/locality\_stats.py}     & statistiche di località del gather \\
+\texttt{tools/locality\_stats.py}     & statistiche di località delle letture sparse \\
 \texttt{tools/nsys\_phases.py}        & fasi delle iterazioni ibride, dai profili \texttt{nsys} \\
 \texttt{tools/hybrid\_table.py}       & tabella dei tempi della versione ibrida \\
 \texttt{tools/plot\_hybrid.py}        & figura della versione ibrida \\
@@ -786,12 +786,77 @@ stessa funzione \texttt{pagerank()}, così che \texttt{main.c} e \texttt{csr.c}
 restino quelli delle altre versioni. Lo compila \texttt{nvcc}, che passa
 \texttt{-fopenmp} al compilatore dell'host per la parte di lavoro che resta
 alla CPU. I due cicli dell'Algoritmo~\ref{alg:seq} diventano kernel CUDA, e una
-parte delle righe del secondo, le più lunghe, la calcolano i thread OpenMP.
+parte delle righe del secondo, le più lunghe, le calcolano i thread OpenMP.
 Con l'opzione \texttt{-s 0} la CPU non riceve righe: è la versione solo GPU,
 lo stesso codice senza copie in più a ogni iterazione e senza avviare i thread
-OpenMP, che per questo non ha un eseguibile a sé. Per le chiamate CUDA
+OpenMP. Per le chiamate CUDA
 viene usata la macro \texttt{HANDLE\_ERROR}, che ferma il programma al primo
 errore indicandone il punto.
+
+\stacco
+La Figura~\ref{fig:panoramica} riassume le fasi del programma e, in
+dettaglio, la preparazione che precede il cronometro.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  >=latex,
+  fase/.style={draw,semithick,rounded corners=3pt,align=center,
+               text width=2.45cm,minimum height=1.45cm,font=\footnotesize},
+  passo/.style={draw,semithick,rounded corners=3pt,align=center,
+                text width=4.3cm,minimum height=1.2cm,font=\footnotesize},
+  freccia/.style={->,semithick},
+  zoom/.style={gray,densely dashed}
+]
+% ---- le fasi del programma
+\node[fase,fill=green!15] (a) at (0,0)
+  {\textbf{Conversione}\\ \scriptsize SNAP $\to$ CSR,\\ \scriptsize una volta sola};
+\node[fase,fill=green!15] (b) at (3.1,0)
+  {\textbf{Caricamento}\\ \scriptsize opzioni,\\ \scriptsize\texttt{csr\_load}};
+\node[fase,fill=blue!13] (c) at (6.2,0)
+  {\textbf{Preparazione}\\ \scriptsize classi, memoria,\\ \scriptsize copie, griglie};
+\node[fase,fill=blue!13] (d) at (9.3,0)
+  {\textbf{Iterazioni}\\ \scriptsize cronometrate, fino\\ \scriptsize a convergenza};
+\node[fase,fill=blue!13] (e) at (12.4,0)
+  {\textbf{Risultati}\\ \scriptsize rank finali all'host};
+\draw[freccia] (a.east) -- (b.west);
+\draw[freccia] (b.east) -- (c.west);
+\draw[freccia] (c.east) -- (d.west);
+\draw[freccia] (d.east) -- (e.west);
+% ---- la preparazione in dettaglio, sotto la sua fase
+\draw[zoom,rounded corners=4pt] (-1.35,-1.75) rectangle (13.75,-5.3);
+\draw[zoom] (c.south west) -- (-1.35,-1.75);
+\draw[zoom] (c.south east) -- (13.75,-1.75);
+\node[passo,fill=green!15] (p1) at (1.1,-2.65)
+  {\textbf{Righe della CPU}\\ \scriptsize\texttt{host\_threshold}, quota \texttt{-s}};
+\node[passo,fill=green!15] (p2) at (6.2,-2.65)
+  {\textbf{Classi delle righe}\\ \scriptsize\texttt{group\_rows}, array \texttt{rows}};
+\node[passo,fill=blue!13] (p3) at (11.3,-2.65)
+  {\textbf{Memoria della GPU}\\ \scriptsize\texttt{cudaMemGetInfo}, \texttt{cudaMalloc}};
+\node[passo,fill=blue!13] (p4) at (11.3,-4.45)
+  {\textbf{Memoria page-locked}\\ \scriptsize\texttt{cudaMallocHost}, due stream, due eventi};
+\node[passo,fill=blue!13] (p5) at (6.2,-4.45)
+  {\textbf{Copia sulla GPU}\\ \scriptsize CSR, \texttt{rows}, rank a $1/N$};
+\node[passo,fill=blue!13] (p6) at (1.1,-4.45)
+  {\textbf{Dimensione delle griglie}\\ \scriptsize blocchi residenti $\times$ SM};
+\draw[freccia] (p1.east) -- (p2.west);
+\draw[freccia] (p2.east) -- (p3.west);
+\draw[freccia] (p3.south) -- (p4.north);
+\draw[freccia] (p4.west) -- (p5.east);
+\draw[freccia] (p5.west) -- (p6.east);
+\end{tikzpicture}
+\caption{Le fasi della versione ibrida, dalla conversione del grafo ai
+risultati, e sotto, in dettaglio, la preparazione che precede il cronometro:
+solo il ciclo delle iterazioni è cronometrato. Nella preparazione, sull'host
+si sceglie quali righe vanno alla CPU e si raggruppano le altre per classe;
+poi si controlla e si alloca la memoria, si copiano sulla GPU i tre array del
+CSR, l'array \texttt{rows} delle righe raggruppate per classe e i rank
+iniziali, e si dimensionano le griglie dei kernel (ciascuna con al più tanti
+blocchi quanti ne possono risiedere contemporaneamente in un SM, moltiplicati
+per il numero di SM). In verde il lavoro del solo host, in blu quello che
+coinvolge la GPU.}
+\label{fig:panoramica}
+\end{figure}
 
 \paragraph{Il grafo sulla GPU.}
 I tre array del CSR e i vettori \texttt{cur}, \texttt{nxt} e
@@ -801,10 +866,8 @@ tornano all'host una volta sola, dopo che si è fermato
 (Sezione~\ref{sec:misura}); fra un'iterazione e l'altra i due vettori dei rank
 si alternano scambiando i puntatori passati ai kernel, come nella versione per
 CPU. Prima di allocare, il programma chiede al runtime la memoria libera
-(\texttt{cudaMemGetInfo}) e la confronta con quella che servirà: per
-\texttt{soc-LiveJournal1} in doppia precisione circa 450~MiB, l'11\,\% dei
-4~GiB della GPU più piccola fra quelle usate. Se non basta si ferma dicendo
-quanta ne serve.
+(\texttt{cudaMemGetInfo}) e la confronta con quella che servirà (se non basta
+si ferma dicendo quanta ne serve).
 
 \paragraph{Il primo ciclo e le riduzioni.}
 Il calcolo dei contributi diventa \texttt{contrib\_kernel}, un thread
