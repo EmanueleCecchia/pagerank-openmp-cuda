@@ -1004,6 +1004,122 @@ molti archi: su \texttt{web-NotreDame}, \texttt{-s 0.25} dà alla CPU il
 14,6\,\% degli archi. Le righe della CPU sono l'ultima classe dell'array
 \texttt{rows}.
 
+\paragraph{Un'iterazione, fra due stream.}
+Per calcolare le sue righe la CPU ha bisogno di \texttt{contrib} per
+intero, perché i predecessori di una riga possono essere ovunque nel grafo. A
+ogni iterazione tutto il vettore deve quindi passare dalla GPU all'host, 
+qualunque sia la quota; la CPU, a sua volta, deve
+rimandare i rank delle sue righe. Perché questi trasferimenti non fermino la
+GPU, l'iterazione usa due stream e due eventi,
+nell'ordine della Figura~\ref{fig:iterazione}:
+\begin{enumerate}\itemsep2pt
+  \item sullo stream principale \texttt{contrib\_kernel} calcola i
+    contributi e la dangling mass;
+  \item un secondo stream, che con \texttt{cudaStreamWaitEvent} attende
+    il solo \texttt{contrib\_kernel}, copia \texttt{contrib} e la dangling mass
+    sull'host con \texttt{cudaMemcpyAsync}, mentre lo stream principale
+    prosegue con i kernel di accumulo delle righe della GPU: la copia la esegue
+    il \emph{copy engine}, e si sovrappone al calcolo;
+  \item l'host attende la fine della copia
+    (\texttt{cudaEventSynchronize}) e i thread OpenMP calcolano le righe della
+    CPU, con \texttt{schedule(dynamic,~16)}, perché anche queste hanno
+    lunghezze molto diverse, e \texttt{reduction(+~:~error)};
+  \item i nuovi rank della CPU, scritti uno dopo l'altro nell'ordine di
+    \texttt{rows}, tornano alla GPU con una \texttt{cudaMemcpyAsync},
+    accodata sullo stream principale dopo i kernel di accumulo, e il kernel
+    \texttt{scatter\_host\_ranks} li riporta al loro posto in \texttt{nxt},
+    prima del \texttt{contrib\_kernel} dell'iterazione successiva;
+  \item l'ultima copia dello stream riporta sull'host l'errore della
+    GPU, e l'host attende la fine dell'iterazione con
+    \texttt{cudaStreamSynchronize}.
+\end{enumerate}
+Le copie asincrone richiedono memoria dell'host \emph{page-locked},
+l'unica che la GPU può leggere e scrivere da sé mentre esegue i kernel: il
+buffer che riceve \texttt{contrib} e quello dei rank della CPU sono allocati
+con \texttt{cudaMallocHost}. Gli eventi servono solo a
+sincronizzare, e sono creati con \texttt{cudaEventDisableTiming}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  >=latex,
+  box/.style={draw,semithick,rounded corners=3pt,align=center,
+              text width=4.3cm,minimum height=1.05cm,font=\footnotesize},
+  kern/.style={box,fill=blue!13},
+  copia/.style={box,fill=orange!20},
+  host/.style={box,fill=green!15},
+  attesa/.style={box,draw=gray,densely dashed,text=gray!50!black},
+  testa/.style={draw,semithick,fill=gray!12,align=center,text width=4.3cm,
+                minimum height=0.6cm,font=\footnotesize\bfseries},
+  freccia/.style={->,semithick,gray!60!black},
+  evento/.style={font=\tiny\ttfamily,text=gray!40!black}
+]
+\node[testa] at (0,1.05)    {Host (CPU)};
+\node[testa] at (5.1,1.05)  {Stream di copia};
+\node[testa] at (10.2,1.05) {Stream principale};
+% riga 0
+\node[host] (h1) at (0,0)
+  {\textbf{Accoda il lavoro}\\ \scriptsize kernel, evento, copia};
+\node[kern] (m1) at (10.2,0)
+  {\texttt{contrib\_kernel}\\ \scriptsize contributi e dangling mass};
+% riga 1
+\node[attesa] (h2) at (0,-1.35)
+  {\textbf{Attende la copia}\\ \scriptsize\texttt{cudaEventSynchronize}};
+\node[copia] (c1) at (5.1,-1.35)
+  {\textbf{Copia verso l'host}\\ \scriptsize\texttt{contrib} e dangling mass};
+% righe 1-3: l'accumulo della GPU dura quanto la copia e il lavoro della CPU
+\node[kern,minimum height=3.75cm] (m2) at (10.2,-2.7)
+  {\textbf{Accumulo della GPU}\\ \scriptsize thread, warp, blocco};
+% riga 2
+\node[host] (h3) at (0,-2.7)
+  {\textbf{Accumulo della CPU}\\ \scriptsize OpenMP, righe lunghe};
+% riga 3
+\node[host] (h4) at (0,-4.05)
+  {\textbf{Accoda il ritorno}\\ \scriptsize copia dei rank, scatter};
+% righe 4-6
+\node[attesa,minimum height=3.75cm] (h5) at (0,-6.75)
+  {\textbf{Attende la GPU}\\ \scriptsize\texttt{cudaStreamSynchronize}};
+\node[copia] (m3) at (10.2,-5.4)
+  {\textbf{Copia verso la GPU}\\ \scriptsize rank delle righe della CPU};
+\node[kern] (m4) at (10.2,-6.75)
+  {\texttt{scatter\_host\_ranks}\\ \scriptsize rank della CPU in \texttt{nxt}};
+\node[copia] (m5) at (10.2,-8.1)
+  {\textbf{Copia verso l'host}\\ \scriptsize errore della GPU};
+% riga 7
+\node[host] (h6) at (0,-9.45)
+  {\textbf{Errore GPU + CPU}\\ \scriptsize scambia \texttt{cur} e \texttt{nxt}, convergenza?};
+% host
+\draw[freccia] (h1.south) -- (h2.north);
+\draw[freccia] (h2.south) -- (h3.north);
+\draw[freccia] (h3.south) -- (h4.north);
+\draw[freccia] (h4.south) -- (h5.north);
+\draw[freccia] (h5.south) -- (h6.north);
+% stream principale
+\draw[freccia] (m1.south) -- (m2.north);
+\draw[freccia] (m2.south) -- (m3.north);
+\draw[freccia] (m3.south) -- (m4.north);
+\draw[freccia] (m4.south) -- (m5.north);
+% fra le colonne
+\draw[freccia] (h1.east) -- (m1.west);
+\draw[freccia] (7.925,-0.3) -| (c1.north);
+\node[evento,anchor=west] at (5.2,-0.57) {contrib\_done};
+\draw[freccia] (c1.south) |- (h3.east);
+\node[evento,anchor=west] at (5.2,-2.3) {contrib\_copied};
+\draw[freccia] (h4.east) -- (7.65,-4.05) |- (m3.west);
+\draw[freccia] (m5.west) -- (h5.east |- m5.west);
+\node[anchor=west,font=\scriptsize] at (-2.275,-10.35)
+  {$\circlearrowleft$ se l'errore supera la tolleranza, iterazione successiva};
+\end{tikzpicture}
+\caption{Un'iterazione della versione ibrida in dettaglio, con il tempo verso
+il basso: una colonna per l'host e una per ciascuno stream.
+In blu i kernel della GPU, in arancio le copie, in verde il lavoro
+dell'host, tratteggiate le attese. Con \texttt{-s 0} sparisce lo stream di
+copia; nello stream principale mancano ``Copia verso la GPU'' e lo scatter dei
+rank, e l'host attende solo la GPU alla fine dell'iterazione, per leggerne
+l'errore e decidere se continuare.}
+\label{fig:iterazione}
+\end{figure}
+
 \subsection{Strategia di verifica}
 \label{sec:verifica}
 Il programma produce milioni di valori, non ispezionabili a
