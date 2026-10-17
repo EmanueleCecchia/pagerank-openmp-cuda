@@ -881,6 +881,39 @@ non per thread, perché migliaia di aggiornamenti sullo stesso indirizzo
 verrebbero serializzati.
 
 
+\paragraph{Il secondo ciclo: tre kernel per tre classi.}
+Il rank nuovo di un nodo richiede la somma dei contributi dei suoi
+predecessori, cioè degli elementi della sua riga, e la scelta è quanti thread
+dedicare a ciascuna riga. Un thread per riga, la traduzione diretta
+del ciclo OpenMP, va bene finché le righe sono corte e di lunghezza simile: i
+32 thread di un warp procedono al passo del più lento, e una riga lunga
+trattiene tutto il suo warp; affidata a un solo thread, una riga di centinaia
+di migliaia di predecessori allungherebbe l'intero kernel. Le righe sono
+perciò divise in tre classi, ciascuna con il suo kernel:
+\begin{itemize}\itemsep2pt
+  \item fino a $T$ predecessori, \texttt{accumulate\_thread\_rows}: un
+    thread per riga;
+  \item fino a $W$, \texttt{accumulate\_warp\_rows}: un warp per riga, in
+    cui il thread $k$ legge gli elementi $k$, $k+32$, $k+64$, \dots{} della
+    riga. I 32 thread leggono così insieme 32 elementi consecutivi di
+    \texttt{col\_idx}, con accesso coalescente. Le 32 somme parziali si
+    sommano poi dentro il warp con \texttt{\_\_shfl\_down\_sync};
+  \item oltre $W$, \texttt{accumulate\_block\_rows}: un blocco di 256
+    thread per riga, con lo stesso schema; le 256 somme parziali si sommano
+    prima dentro ogni warp con \texttt{\_\_shfl\_down\_sync}, poi fra gli 8
+    warp attraverso la shared memory.
+\end{itemize}
+Le soglie si scelgono a tempo di esecuzione con l'opzione
+\texttt{-b T,W}, e valgono 16 e 256 di default (Tabella~\ref{tab:bins}).
+Una $T$ oltre la riga più lunga dà a ogni riga un thread.
+Prima del ciclo le righe vengono raggruppate per classe in un
+array \texttt{rows}, e ciascun kernel ne riceve la sua porzione. I nodi
+conservano però la loro numerazione: rinumerarli per classe disperderebbe i
+predecessori che l'ordine originale tiene vicini, cioè la località che la
+Sezione~\ref{sec:scalabilita} ha mostrato decisiva. I kernel sono accodati
+sullo stesso stream, quindi vengono eseguiti uno dopo l'altro e leggono
+\texttt{contrib} quando \texttt{contrib\_kernel} è terminato.
+
 \paragraph{Perché una granularità variabile.}
 La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info.c},
 è riportata in Tabella~\ref{tab:bins}, e le sue due metà dicono cose
@@ -895,10 +928,9 @@ grosso del lavoro sui grafi sociali, l'81\,\% degli archi su
 \texttt{soc-Pokec}. Fa eccezione \texttt{cit-Patents}, che non ha hub: tre
 quarti dei suoi archi stanno in righe fino a 16 elementi, e quelle oltre 256
 ne raccolgono appena lo 0,1\,\%.
-Queste considerazioni vanno a giustificare la scelta:
-le righe vengono raggruppate per lunghezza, così che un warp o un blocco 
-riceva righe di dimensione simile e nessun thread resti inattivo ad aspettare 
-gli altri.
+Questi numeri giustificano la scelta descritta sopra: raggruppate per
+lunghezza, le righe di un warp o di un blocco hanno dimensioni simili e nessun
+thread resta inattivo ad aspettare gli altri.
 
 \stacco
 La Figura~\ref{fig:predecessori} mostra la stessa distribuzione nodo per
@@ -951,6 +983,26 @@ soc-LiveJournal1 & 78,8 & 22,8 & 20,9 & 66,8 & 0,3 & 10,4 & 13\,906 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\paragraph{La quota della CPU.}
+Si prevede di dare alla CPU i nodi di grado più alto,
+gli hub, pochi e lunghi, adatti alla bassa latenza dei suoi core, e alla GPU le
+righe corte, numerose e simili fra loro, adatte al suo throughput. La
+ripartizione fra CPU e GPU si chiede con l'opzione \texttt{-s}, la
+\emph{quota}: la frazione degli archi, fra 0 e 1, da assegnare alla CPU; con
+\texttt{-s 0.25} si chiede per la CPU un quarto degli archi.
+\texttt{host\_threshold} parte dalle righe più lunghe e scende una lunghezza
+alla volta, prendendo ogni volta tutte le righe di quella lunghezza, finché gli
+archi raccolti non supererebbero la quota chiesta; l'ultima lunghezza presa è
+la lunghezza minima, e alla CPU andranno tutte le righe con almeno quel numero
+di predecessori. Una soglia fissa sul numero di predecessori non sarebbe
+portabile fra i grafi: con \texttt{-s 0.25} la lunghezza minima è 18 su
+\texttt{cit-Patents} e 2\,676 su \texttt{web-BerkStan}. Prendendo lunghezze
+intere, la quota ottenuta può
+restare sotto quella chiesta, e di molto dove una sola lunghezza raccoglie
+molti archi: su \texttt{web-NotreDame}, \texttt{-s 0.25} dà alla CPU il
+14,6\,\% degli archi. Le righe della CPU sono l'ultima classe dell'array
+\texttt{rows}.
 
 \subsection{Strategia di verifica}
 \label{sec:verifica}
