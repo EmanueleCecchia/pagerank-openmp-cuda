@@ -1250,6 +1250,14 @@ La versione OpenMP è stata misurata sulla Macchina 1 e sulla
 Macchina 3. La seconda ha il triplo
 dei core fisici e una L3 di 21~MiB anziché 8.
 
+\stacco
+La versione ibrida è stata misurata su tutte e tre le macchine, una
+volta per ogni GPU: cinque configurazioni in tutto. Le GPU non sono
+collegate tutte allo stesso modo: lavorano su PCIe 3.0 x16 la GTX 1050 Ti della
+Macchina 1 e la prima RTX 2080 Ti della Macchina 3, su x8 la seconda RTX 2080
+Ti della Macchina 3 ed entrambe le GPU della Macchina 2; la differenza conta
+quando la CPU ha una parte del lavoro (Sezione~\ref{sec:ibrida-risultati}).
+
 \subsection{Istanze di prova}
 Sono stati usati nove grafi reali della collezione
 SNAP~\cite{snap}: una rete di voti fra utenti di Wikipedia, quattro reti
