@@ -1120,6 +1120,15 @@ l'errore e decidere se continuare.}
 \label{fig:iterazione}
 \end{figure}
 
+\paragraph{L'errore di convergenza.}
+I kernel di accumulo sommano anche la variazione $|\mathrm{PR}'[v]-\mathrm{PR}[v]|$
+delle loro righe, con lo stesso meccanismo usato nel primo ciclo per la
+riduzione della dangling mass; l'host somma a questo totale la variazione
+delle righe della CPU. Dangling mass ed errore della GPU stanno
+in un array di due scalari in memoria globale, azzerato a inizio iterazione e
+riportato sull'host alla fine con una sola copia: con la GPU sola, questi 16
+byte sono l'unico trasferimento di ogni iterazione.
+
 \subsection{Strategia di verifica}
 \label{sec:verifica}
 Il programma produce milioni di valori, non ispezionabili a
