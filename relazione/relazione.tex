@@ -870,20 +870,15 @@ CPU. Prima di allocare, il programma chiede al runtime la memoria libera
 si ferma dicendo quanta ne serve).
 
 \paragraph{Il primo ciclo e le riduzioni.}
-Il calcolo dei contributi diventa \texttt{contrib\_kernel}, un thread
-per nodo. Come tutti i kernel del file è scritto con un ciclo
-\emph{grid-stride}: ogni thread tratta il nodo $v$, poi $v$ più il numero di
-thread della griglia, e così via, così che la griglia possa essere
-dimensionata sulla GPU anziché sul grafo. La dangling mass è una riduzione, come nella
-versione OpenMP: ogni thread accumula la sua
-parte in un registro; i 32 thread di un warp la sommano in cinque passi con
-\texttt{\_\_shfl\_down\_sync}, senza passare dalla memoria; i totali degli 8
-warp del blocco passano per la shared memory, separati da
-\texttt{\_\_syncthreads}, e li somma il warp~0; infine un solo thread per
-blocco aggiunge il totale del blocco a una variabile in memoria globale con
-\texttt{atomicAdd}. Un'operazione atomica per blocco e non per thread, perché
-migliaia di thread in coda sullo stesso indirizzo serializzerebbero gli
-aggiornamenti.
+Il calcolo dei contributi diventa \texttt{contrib\_kernel}. Come tutti i kernel di
+\texttt{pagerank\_cuda.cu}, usa un ciclo \emph{grid-stride}. La dangling mass
+si calcola con una riduzione, come nella versione OpenMP: ogni thread somma la sua parte in un registro, i 32
+thread di un warp combinano le loro con \texttt{\_\_shfl\_down\_sync}, gli 8
+warp di un blocco attraverso la shared memory, dopo una barriera
+\texttt{\_\_syncthreads}, e infine ogni blocco aggiunge il suo totale a una
+variabile in memoria globale con un solo \texttt{atomicAdd}: uno per blocco e
+non per thread, perché migliaia di aggiornamenti sullo stesso indirizzo
+verrebbero serializzati.
 
 
 \paragraph{Perché una granularità variabile.}
