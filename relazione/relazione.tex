@@ -1129,6 +1129,20 @@ in un array di due scalari in memoria globale, azzerato a inizio iterazione e
 riportato sull'host alla fine con una sola copia: con la GPU sola, questi 16
 byte sono l'unico trasferimento di ogni iterazione.
 
+\paragraph{Nessuna ipotesi sul dispositivo.}
+I blocchi hanno 256 thread, un multiplo della dimensione del warp.
+Il numero di blocchi di ogni kernel è quello che la GPU tiene residenti tutti
+insieme: i blocchi per multiprocessore, che il runtime calcola con
+\texttt{cudaOccupancyMaxActiveBlocksPerMultiprocessor}, per il numero di
+multiprocessori, letto con \texttt{cudaGetDeviceProperties}; meno, se il
+lavoro ne richiede meno. Con i cicli grid-stride questi stessi blocchi trattano
+più nodi al crescere del grafo, senza che il loro numero aumenti. La prima
+chiamata CUDA del programma,
+che avvia il driver sulla GPU e richiede un tempo non trascurabile, è quella
+che descrive il dispositivo, e \texttt{main.c} la esegue prima del cronometro.
+Il \texttt{Makefile}, infine, compila per l'architettura della GPU presente
+(\texttt{-arch=native}), ma è sovrascrivibile.
+
 \subsection{Strategia di verifica}
 \label{sec:verifica}
 Il programma produce milioni di valori, non ispezionabili a
