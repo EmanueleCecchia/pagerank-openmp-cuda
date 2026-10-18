@@ -928,9 +928,11 @@ grosso del lavoro sui grafi sociali, l'81\,\% degli archi su
 \texttt{soc-Pokec}. Fa eccezione \texttt{cit-Patents}, che non ha hub: tre
 quarti dei suoi archi stanno in righe fino a 16 elementi, e quelle oltre 256
 ne raccolgono appena lo 0,1\,\%.
-Questi numeri giustificano la scelta descritta sopra: raggruppate per
-lunghezza, le righe di un warp o di un blocco hanno dimensioni simili e nessun
-thread resta inattivo ad aspettare gli altri.
+Questi numeri giustificano la scelta descritta sopra. Con un thread per riga,
+una sola riga di centinaia di migliaia di predecessori fermerebbe il suo warp
+per altrettanti passi. Con le classi, nessun thread aspetta gli altri del suo
+warp per più di 16 passi, e ogni warp o blocco lavora con almeno metà dei suoi
+thread.
 
 \stacco
 La Figura~\ref{fig:predecessori} mostra la stessa distribuzione nodo per
@@ -1747,6 +1749,33 @@ di 6,4, sulla RTX 2080 Ti di 2,2. Su tutte e tre le GPU la memoria globale si
 legge in settori da 32 byte: un arco che chiede un contributo lontano dagli altri ne impegna uno
 intero per 8 byte utili; sulla CPU, per gli stessi 8 byte, impegna una linea
 di cache da 64 byte.
+
+\paragraph{La singola precisione sulla GPU.}
+La variante \texttt{float} dimezza i byte dei tre vettori, ma sulla GPU
+non sempre conviene. Sulla RTX 2080 Ti riduce il tempo della GPU sola del
+27\,\% su \texttt{soc-LiveJournal1} e del 38\,\% su \texttt{cit-Patents}, ma lo
+aumenta del 22--31\,\% sui tre grafi dove la lettura di \texttt{contrib} è più
+leggera: \texttt{web-NotreDame} e \texttt{web-BerkStan}, i più locali, e
+\texttt{web-Stanford}, il cui \texttt{contrib}, di 2,2~MiB, è il più piccolo
+fra gli otto grafi misurati. Sulla GTX 1050 Ti rallentano solo
+\texttt{web-NotreDame} e \texttt{web-BerkStan}, dell'11 e del 13\,\%; sulla
+GTX 1080 Ti nessun grafo. Secondo \texttt{nsys} il rallentamento è tutto nei
+kernel di accumulo (\texttt{accumulate\_thread\_rows},
+\texttt{accumulate\_warp\_rows} e \texttt{accumulate\_block\_rows}),
+mentre \texttt{contrib\_kernel} in \texttt{float} dura meno
+della metà. La spiegazione più probabile sta negli accumulatori, che restano in
+\texttt{double} (Sezione~\ref{sec:precisione}): nella variante \texttt{float}
+ogni contributo letto va convertito in \texttt{double} prima di essere
+sommato, un'istruzione in più per arco, eseguita dalle unità a 64 bit, che
+sulle GPU di fascia consumer sono una piccola frazione di quelle a 32. I due
+effetti del \texttt{float} vanno in direzioni opposte. Su \texttt{cit-Patents}
+e \texttt{soc-LiveJournal1} i contributi sono sparsi su tutto il vettore, e la
+GPU passa il tempo ad aspettarli dalla memoria: leggerne la metà dei byte
+accorcia l'attesa, e il \texttt{float} è più veloce. Su
+\texttt{web-NotreDame}, \texttt{web-BerkStan} e \texttt{web-Stanford} i
+contributi sono vicini fra loro o stanno in cache e arrivano in fretta: la GPU
+non aspetta la memoria, e la conversione in più per ogni arco allunga il
+tempo.
 
 \daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
 con OpenMP, occupancy, effetto della granularità adattiva, effetto della
