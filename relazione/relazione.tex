@@ -1780,6 +1780,61 @@ contributi sono vicini fra loro o stanno in cache e arrivano in fretta: la GPU
 non aspetta la memoria, e la conversione in più per ogni arco allunga il
 tempo.
 
+\paragraph{Dividere il lavoro.}
+La Tabella~\ref{tab:quote} riporta per ogni configurazione la quota più
+veloce, e la Figura~\ref{fig:quote} l'andamento completo per quattro di esse. Il
+quadro si divide in due. Sulla Macchina 1 dividere il lavoro conviene su
+tutti i grafi: la quota migliore è fra 0,5 e 0,75 su sette grafi su otto, e la
+versione ibrida è da 1,05 a 1,80 volte più veloce della migliore fra OpenMP e
+GPU sola, da 4,2 a 7,3 volte più veloce della sequenziale, contro il 2,6--3,5
+della sola OpenMP. Sulle GPU più veloci, invece, la GPU sola è quasi sempre la
+scelta migliore: una quota rende sui due grafi sociali, i più grandi per numero
+di archi, e al più 1,25 volte (\texttt{soc-Pokec} sulla GTX 1080 Ti), 1,20
+sulla RTX 2080 Ti a x16, 1,08 a x8, mai sulla RTX 2080 Ti della Macchina 2,
+dove la CPU ha 4 core, come quella della Macchina 1, invece dei 12 della
+Macchina 3: gli stessi core che bastano accanto alla GTX 1050 Ti sono troppo
+lenti accanto alla RTX 2080 Ti. La GTX 1080 Ti guadagna qualcosa, con quote piccole, anche su \texttt{web-Google}
+e \texttt{wiki-topcats}.
+
+\begin{table}[h]
+\centering
+\caption{La quota più veloce per ogni grafo e configurazione, e fra parentesi
+lo speed-up che dà rispetto alla GPU sola. Un trattino dove nessuna quota
+batte la GPU sola di più dell'1\,\%.
+M1, M2 e M3 sono le tre macchine.}
+\label{tab:quote}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+ & \textbf{GTX 1050 Ti} & \textbf{GTX 1080 Ti} &
+\multicolumn{3}{c}{\textbf{RTX 2080 Ti}} \\
+\cmidrule(l){4-6}
+\textbf{Grafo} & \textbf{M1} & \textbf{M2} &
+\textbf{M2} & \textbf{M3, x8} & \textbf{M3, x16} \\
+\midrule
+web-NotreDame    & 0,5 (1,05)  & ---          & --- & ---         & ---         \\
+web-Stanford     & 0,75 (1,66) & ---          & --- & ---         & ---         \\
+web-Google       & 0,75 (1,99) & 0,1 (1,05)   & --- & ---         & ---         \\
+web-BerkStan     & 0,1 (1,12)  & ---          & --- & ---         & ---         \\
+cit-Patents      & 0,5 (1,70)  & ---          & --- & ---         & ---         \\
+wiki-topcats     & 0,5 (1,82)  & 0,05 (1,02)  & --- & ---         & ---         \\
+soc-Pokec        & 0,75 (2,04) & 0,25 (1,25)  & --- & 0,1 (1,08)  & 0,25 (1,17) \\
+soc-LiveJournal1 & 0,5 (1,70)  & 0,25 (1,14)  & --- & 0,1 (1,03)  & 0,25 (1,20) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figure/quote.pdf}
+\caption{Speed-up della versione ibrida rispetto alla GPU sola, al variare
+della quota di archi data alla CPU, un pannello per grafo, su asse verticale
+logaritmico. Sopra la linea tratteggiata dividere il lavoro conviene.
+La RTX 2080 Ti della Macchina 2 è solo nella Tabella~\ref{tab:quote}.
+Figura generata da \texttt{tools/plot\_hybrid.py}.}
+\label{fig:quote}
+\end{figure}
+
 \daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
 con OpenMP, occupancy, effetto della granularità adattiva, effetto della
 sovrapposizione fra trasferimenti e calcolo.}
