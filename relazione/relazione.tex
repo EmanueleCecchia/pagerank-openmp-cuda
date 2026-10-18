@@ -1246,9 +1246,12 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 \end{center}
 
 \stacco
-La versione OpenMP è stata misurata sulla Macchina 1 e sulla
-Macchina 3. La seconda ha il triplo
-dei core fisici e una L3 di 21~MiB anziché 8.
+La versione OpenMP è stata misurata sulle Macchine 1 e 3: la Macchina 3 ha
+il triplo dei core fisici e una L3 di 21~MiB anziché 8. Non è stata misurata
+sulla Macchina 2, la cui CPU ha la stessa struttura di quella della Macchina 1
+(4 core fisici, 8 thread logici, cache delle stesse dimensioni): non avrebbe
+aggiunto un caso nuovo allo studio della scalabilità, che dipende dal numero
+di core fisici.
 
 \stacco
 La versione ibrida è stata misurata su tutte e tre le macchine, una
@@ -1683,6 +1686,68 @@ tolleranza utilizzata negli esperimenti ($10^{-6}$) entrambe convergono
 nello stesso numero di iterazioni.
 
 \subsection{Risultati della versione ibrida}
+\label{sec:ibrida-risultati}
+La versione ibrida è stata misurata sulle tre macchine e su ciascuna
+delle loro GPU, sugli stessi nove grafi, in doppia e in singola precisione,
+alle quote 0, 0,05, 0,1, 0,25, 0,5, 0,75 e 1. La parte della
+CPU usa tutti i thread logici: 8 sulle Macchine 1 e 2, 24 sulla Macchina 3.
+Come per OpenMP, ogni configurazione è stata eseguita tre volte e si riporta
+il minimo. Ogni esecuzione della versione ibrida è avvenuta sotto il profiler 
+\texttt{nsys}, che introduce un overhead di circa l'1\,\% del tempo e registra
+inizio e fine di ogni kernel e di ogni copia (i report di \texttt{nsys}
+letti tramite \texttt{tools/nsys\_phases.py}). Tutti i tempi di questa
+sezione sono della variante in doppia precisione, tranne quelli del
+paragrafo sulla singola precisione.
+
+\paragraph{La GPU da sola.}
+Con il lavoro tutto sulla GPU (Tabella~\ref{tab:gpu-sola}) la RTX 2080
+Ti è da 1,4 a 2,9 volte più veloce dei 24 thread della Macchina 3, e da 15 a
+27 volte più veloce della versione sequenziale. Sulla Macchina 1, invece,
+la GTX 1050 Ti e i 4 core della CPU si equivalgono: la GPU va da 0,68 volte
+(\texttt{web-Google}) a 1,9 volte (\texttt{web-BerkStan}) la versione OpenMP a
+8 thread. Il trasferimento iniziale del grafo, escluso dal tempo, non cambia
+il quadro: per \texttt{soc-LiveJournal1}, 392~MB, richiede da 37 a 63~ms
+secondo la macchina, contro 0,47~s di calcolo sulla RTX 2080 Ti.
+
+\begin{table}[h]
+\centering
+\caption{Tempi in secondi della GPU sola (quota 0) e, per confronto, della
+migliore configurazione OpenMP della stessa macchina (8 thread sulla Macchina
+1, 24 sulla Macchina 3). La RTX 2080 Ti è quella della Macchina 3 sul
+collegamento x16: con la GPU sola, sull'altra e su quella della Macchina 2 i
+tempi coincidono entro il 3\,\%. Sulla Macchina 2 la versione OpenMP non è
+stata misurata.}
+\label{tab:gpu-sola}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{\textbf{Macchina 1}} & \textbf{Macchina 2} &
+\multicolumn{2}{c}{\textbf{Macchina 3}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-4}\cmidrule(l){5-6}
+\textbf{Grafo} & \textbf{GTX 1050 Ti} & \textbf{OpenMP} & \textbf{GTX 1080 Ti} &
+\textbf{RTX 2080 Ti} & \textbf{OpenMP} \\
+\midrule
+web-NotreDame    & 0,032 & 0,049 & 0,010 & 0,010 & 0,014 \\
+web-Stanford     & 0,127 & 0,092 & 0,019 & 0,014 & 0,028 \\
+web-Google       & 0,534 & 0,361 & 0,113 & 0,041 & 0,099 \\
+web-BerkStan     & 0,101 & 0,192 & 0,027 & 0,028 & 0,083 \\
+cit-Patents      & 0,444 & 0,466 & 0,110 & 0,049 & 0,128 \\
+wiki-topcats     & 0,777 & 0,765 & 0,188 & 0,085 & 0,227 \\
+soc-Pokec        & 1,965 & 1,400 & 0,435 & 0,161 & 0,320 \\
+soc-LiveJournal1 & 3,922 & 4,229 & 1,023 & 0,466 & 1,178 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\stacco
+Anche sulla GPU il costo per arco dipende dalla località. Sulla GTX
+1050 Ti un arco di \texttt{web-Google} costa 1,69~ns e uno di
+\texttt{web-BerkStan} 0,21~ns, otto volte meno; sulla GTX 1080 Ti il rapporto è
+di 6,4, sulla RTX 2080 Ti di 2,2. Su tutte e tre le GPU la memoria globale si
+legge in settori da 32 byte: un arco che chiede un contributo lontano dagli altri ne impegna uno
+intero per 8 byte utili; sulla CPU, per gli stessi 8 byte, impegna una linea
+di cache da 64 byte.
+
 \daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
 con OpenMP, occupancy, effetto della granularità adattiva, effetto della
 sovrapposizione fra trasferimenti e calcolo.}
