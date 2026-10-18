@@ -1535,8 +1535,8 @@ in più. Quel $28\,\%$ è però un tetto di miglioramento ideale:
 lo si raggiungerebbe solo se gli archi
 fossero gratis, mentre il divario osservato è il $74\,\%$.
 Non lo spiega neppure la concentrazione nelle righe lunghe:
-\texttt{soc-LiveJournal1} ha il $60\,\%$ degli
-archi oltre i 32 predecessori, quasi quanto il $67\,\%$ di
+\texttt{soc-LiveJournal1} ha il $77\,\%$ degli
+archi oltre i 16 predecessori, più del $74\,\%$ di
 \texttt{web-BerkStan} (Tabella~\ref{tab:bins}), eppure per arco costa
 $1{,}26$~ns, poco più di \texttt{web-Google}.
 
@@ -1550,10 +1550,9 @@ stessa riga è $1$, una conseguenza di come sono stati raccolti e salvati i dati
 una sola linea di cache da 64 byte porta con sé 8 contributi consecutivi,
 e ne bastano poche per servire un'intera riga: in media una linea ogni 16
 archi, $0{,}06$ linee per arco (Tabella~\ref{tab:localita}),
-cosicché questa raccolta di
-valori da posizioni sparse --- il \emph{gather} --- si riduce a una lettura
-quasi sequenziale.
-In \texttt{web-Google} gli indici sono sparsi su tutto l'array, con un salto mediano di quasi $17\,000$ posizioni, e
+cosicché questa raccolta di valori da posizioni sparse si riduce a una 
+lettura quasi sequenziale. In \texttt{web-Google} gli indici sono sparsi su
+tutto l'array, con un salto mediano di quasi $17\,000$ posizioni, e
 quasi ogni arco pretende una linea di cache nuova ($0{,}99$ linee per
 arco)\footnote{Linee di cache distinte contate da \texttt{tools/locality\_stats.py};
 5054775 linee / 5105039 archi = 0,99 linee per arco; 5054775 linee
@@ -1581,7 +1580,7 @@ divide su meno archi.
 \stacco
 La cache manca del tutto alle quattro istanze maggiori, i cui
 \texttt{contrib}, da $12{,}5$ a $37$~MiB, nella L3 da 8~MiB non entrano: la
-gran parte delle linee che il gather richiede va cercata in memoria, e il
+gran parte delle linee che la lettura sparsa richiede va cercata in memoria, e il
 costo per arco dipende sia dalla località sia da quanta parte di
 \texttt{contrib} la cache riesce ancora a trattenere.
 \texttt{wiki-topcats}, la più locale delle quattro ($0{,}42$ linee per arco),
@@ -1611,14 +1610,14 @@ e rende proprio dove la Macchina 1 aspetta la RAM.
 mediana di \texttt{col\_idx[j+1] - col\_idx[j]} all'interno di una riga; le
 linee di cache distinte sono contate su blocchi di 256 righe, che è l'unità di
 schedulazione del ciclo, e divise per il numero di archi danno le linee per
-arco; il gather per iterazione è il volume che ne risulta.
+arco; le letture per iterazione sono il volume che ne risulta.
 Misure prodotte da \texttt{tools/locality\_stats.py} dai file \texttt{.csr};
 i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling} per
 la Macchina 1 (M1) e della Tabella~\ref{tab:scaling3} per la Macchina 3 (M3).}
 \label{tab:localita}
 \begin{tabular}{@{}lrrrrrr@{}}
 \toprule
-\textbf{Grafo} & \textbf{salto} & \textbf{linee} & \textbf{gather} &
+\textbf{Grafo} & \textbf{salto} & \textbf{linee} & \textbf{letture} &
 \textbf{\texttt{contrib}} & \multicolumn{2}{c}{\textbf{ns per arco}} \\
 \cmidrule(l){6-7}
  & \textbf{mediano} & \textbf{per arco} & \textbf{per iter.} & &
@@ -1664,7 +1663,7 @@ supera: \texttt{web-Google},
 sta in cache o viene letto quasi in sequenza, il guadagno scende all'11\,\%
 su \texttt{web-BerkStan} e sparisce sugli altri due, dove la differenza ($+3\,\%$ su \texttt{web-NotreDame},
 $-4\,\%$ su \texttt{web-Stanford}) può essere attribuita al rumore di misura.
-Il guadagno si concentra dunque dove il gather va in memoria, ed è coerente
+Il guadagno si concentra dunque dove la lettura sparsa va in memoria, ed è coerente
 con il dimezzamento dei byte trasferiti per ogni rank: un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
 
@@ -1673,8 +1672,8 @@ Sulla Macchina 3, a 24 thread, il guadagno si allarga a sette grafi su
 otto, dal 18 al 31\,\%, e comprende \texttt{web-Stanford} e
 \texttt{web-BerkStan}, che sulla Macchina 1 guadagnavano poco o nulla.
 Resta nullo solo su \texttt{web-NotreDame}
-($-2\,\%$), il più piccolo degli otto grafi e quello con il gather per
-iterazione più leggero.
+($-2\,\%$), il più piccolo degli otto grafi e quello con 
+le letture per iterazione più leggere.
 
 Il limite della singola precisione si manifesta sulla soglia di
 convergenza: su \texttt{web-Google} l'errore $L_1$ non scende sotto
