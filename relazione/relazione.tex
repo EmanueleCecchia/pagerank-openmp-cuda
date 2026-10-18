@@ -1314,10 +1314,15 @@ la quota più alta di righe lunghe, oltre 32 predecessori per il 18,0 e il
 10,7\,\% dei nodi (Tabella~\ref{tab:bins}).
 
 \subsection{Correttezza}
-La Tabella~\ref{tab:correttezza} raccoglie i confronti fra le tre
-implementazioni. Lo scarto è la maggiore differenza in valore assoluto fra i
+La Tabella~\ref{tab:correttezza} raccoglie i confronti fra i tre calcoli della
+Sezione~\ref{sec:verifica}: il riferimento denso, NetworkX e il programma C.
+Lo scarto è la maggiore differenza in valore assoluto fra i
 rank corrispondenti, cercata su tutti gli $N$ nodi. I confronti usano la build
-sequenziale; ripetuti con quella OpenMP danno lo stesso scarto.
+sequenziale; ripetuti con quella OpenMP danno lo stesso scarto. Lo
+stesso vale per la build ibrida; sulle quattro istanze maggiori, dove NetworkX
+non è praticabile, la versione ibrida coincide con quella OpenMP entro
+$5\cdot10^{-17}$, nello stesso numero di iterazioni, in esecuzioni di verifica
+apposite, distinte da quelle cronometrate, alle quote 0, 0,4 e 1.
 
 \begin{table}[h]
 \centering
@@ -1340,10 +1345,11 @@ Lo scarto contro NetworkX riportato in tabella è quello di
 resta sotto $6{,}5\cdot10^{-11}$. In ogni caso è ben al di sotto della soglia di
 $10^{-8}$ usata dallo strumento di verifica.
 \stacco
-In tutte le 405 esecuzioni registrate nei \texttt{bench.csv} delle Macchine 1
-e 3 la somma dei
+In tutte le 2\,295 esecuzioni registrate nei \texttt{bench.csv} delle tre macchine, ibride comprese, la somma dei
 rank si discosta da 1 per non più di $1{,}4\cdot10^{-11}$ in doppia precisione
 e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
+Tutte giungono a convergenza, e ogni grafo richiede lo stesso numero di
+iterazioni in ogni build, precisione e quota.
 
 \subsection{\texorpdfstring{\nuovo{Misura dei tempi}}{Misura dei tempi}}
 \label{sec:misura}
