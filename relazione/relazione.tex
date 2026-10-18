@@ -1925,9 +1925,18 @@ una quota per la CPU, invece, è il collegamento a decidere: a parità di GPU e
 di CPU, la x16 rende la versione ibrida 1,20 volte più veloce della GPU sola su
 \texttt{soc-LiveJournal1}, la x8 appena 1,03.
 
-\daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
-con OpenMP, occupancy, effetto della granularità adattiva, effetto della
-sovrapposizione fra trasferimenti e calcolo.}
+\paragraph{Pochi thread sulle righe della CPU.}
+Su \texttt{web-Stanford} e \texttt{web-BerkStan} l'accumulo della CPU
+non cresce in modo regolare con la quota. Sulla RTX 2080 Ti della Macchina 3,
+a x16, quello di \texttt{web-Stanford} dura per iterazione 0,33~ms a quota
+0,05, 0,61~ms a 0,1, 0,82~ms a 0,25 e solo 0,48~ms a 0,5, pur con il doppio
+degli archi rispetto a 0,25. L'accumulo della CPU dà le righe ai thread a
+pacchetti di 16,
+\texttt{schedule(dynamic,~16)}, e su questi grafi le righe della CPU sono poche
+e lunghissime. Su \texttt{web-Stanford}, a quota 0,05 e 0,1 sono 4 e 10, un
+solo pacchetto: lavora un solo thread su 24. A 0,25 sono 92, sei pacchetti, e
+lavorano sei thread. A 0,5 sono 2\,519, e lavorano tutti i 24 thread. Conta
+quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
 
 % =====================================================================
 \section{Valutazioni e osservazioni}
