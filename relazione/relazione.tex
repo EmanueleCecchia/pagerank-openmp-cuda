@@ -1914,6 +1914,17 @@ da ripagarlo. Sulla GTX 1050 Ti, dove ogni arco costa alla GPU molto di più,
 basta poco; sulle GPU più veloci servono quote alte, che però allungano la
 strada della CPU oltre quella della GPU.
 
+\paragraph{Il collegamento.}
+La banda della copia di \texttt{contrib}, misurata da \texttt{nsys}, è
+di 11,2~GB/s sulla Macchina 1, a x16, di 6,6~GB/s sulle due GPU della
+Macchina 2, entrambe a x8, e di 6,8~GB/s e 13,5~GB/s sulle due RTX 2080 Ti
+della Macchina 3, a x8 e a x16. Con la GPU sola
+il collegamento non conta: le due schede della Macchina 3 danno tempi uguali
+entro il 3\,\%, perché durante il calcolo sul bus non passa quasi nulla. Con
+una quota per la CPU, invece, è il collegamento a decidere: a parità di GPU e
+di CPU, la x16 rende la versione ibrida 1,20 volte più veloce della GPU sola su
+\texttt{soc-LiveJournal1}, la x8 appena 1,03.
+
 \daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
 con OpenMP, occupancy, effetto della granularità adattiva, effetto della
 sovrapposizione fra trasferimenti e calcolo.}
