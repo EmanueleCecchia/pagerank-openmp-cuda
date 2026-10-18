@@ -1835,6 +1835,69 @@ Figura generata da \texttt{tools/plot\_hybrid.py}.}
 \label{fig:quote}
 \end{figure}
 
+\paragraph{Dove va il tempo di un'iterazione.}
+La Tabella~\ref{tab:fasi} scompone un'iterazione di
+\texttt{soc-LiveJournal1} con i tempi di \texttt{nsys}, e mostra perché
+dividere il lavoro conviene sulla Macchina 1 e quasi mai sulle GPU più veloci.
+Dopo \texttt{contrib\_kernel} il lavoro procede su due strade parallele
+(Figura~\ref{fig:iterazione}): la GPU fa l'accumulo delle sue righe; la CPU
+attende la copia di \texttt{contrib}, fa l'accumulo delle sue e rimanda i
+rank.
+L'iterazione dura quanto la più lunga delle due.\footnote{$\text{iter.} \approx \text{contrib} +
+\max(\text{accumulo GPU},\ \text{copia} + \text{accumulo CPU}) +
+\text{ritorno}$.} Sulla Macchina 1 a quota 0,5
+la strada della GPU è la più lunga, 43,5~ms di accumulo contro i 3,6 + 30,4 della
+CPU, che la attende per 9,9~ms; a 0,75 accade il contrario, e la strada più
+lunga è quella della CPU. La quota migliore, quella in cui le due strade
+durano uguale, sta quindi fra le due, poco sopra 0,5. Sulla RTX 2080 Ti a x16, a quota 0,25, le due strade
+quasi si equivalgono, 7,3~ms la GPU e 6,7 la CPU, e l'iterazione scende da 9,1
+a 7,6~ms. Sullo stesso grafo e alla stessa quota, a x8 la sola copia costa
+5,7~ms invece di 2,9~ms: la strada della CPU arriva a 9,5~ms, più dei
+7,3~ms della GPU e più anche dei 9,1~ms dell'intera iterazione con la GPU sola.
+Sulla Macchina 2, con 4 core invece di 12, la strada della CPU dura
+5,9~+~11,1~ms: tiene il passo della GTX 1080 Ti, il cui accumulo dura 16,5~ms, ma
+non della RTX 2080 Ti, che impiega 7,2~ms.
+
+\begin{table}[h]
+\centering
+\caption{Le fasi di un'iterazione di \texttt{soc-LiveJournal1}, in
+millisecondi, misurate con \texttt{nsys}. La copia
+è quella di \texttt{contrib} verso l'host, il ritorno quello dei rank della
+CPU più \texttt{scatter\_host\_ranks}, l'attesa quella dell'host per la GPU a
+fine iterazione. La colonna iter. è la durata dell'intera iterazione,
+contrib quella di \texttt{contrib\_kernel}. Ogni riga viene dalla più
+veloce delle tre esecuzioni della sua configurazione. Ogni valore è la
+mediana della durata di quella fase sulle iterazioni di quell'esecuzione,
+calcolata colonna per colonna: i valori di una
+stessa riga possono quindi venire da iterazioni diverse, e ricompongono
+iter. con una variazione di 0,1--0,2~ms. Con la GPU sola le fasi della CPU
+mancano, e i tempi della Macchina 3 sono gli stessi a x8 e a x16.}
+\label{tab:fasi}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llrrrrrrrr@{}}
+\toprule
+ & & & & & \textbf{accumulo} & & \textbf{accumulo} & & \\
+\textbf{GPU} & & \textbf{quota} & \textbf{iter.} & \textbf{contrib} &
+\textbf{GPU} & \textbf{copia} & \textbf{CPU} & \textbf{ritorno} &
+\textbf{attesa} \\
+\midrule
+GTX 1050 Ti & M1     & 0    & 76,9 & 1,2 & 75,6 & ---  & ---  & ---  & ---  \\
+            &        & 0,5  & 45,1 & 1,2 & 43,5 & 3,6  & 30,4 & 0,4  & 9,9  \\
+            &        & 0,75 & 54,4 & 1,2 & 23,5 & 3,6  & 48,6 & 0,9  & 0,9  \\
+\addlinespace
+GTX 1080 Ti & M2     & 0    & 20,1 & 0,3 & 19,7 & ---  & ---  & ---  & ---  \\
+            &        & 0,25 & 17,5 & 0,3 & 16,5 & 5,9  & 11,1 & 0,1  & 0,1  \\
+\addlinespace
+RTX 2080 Ti & M2     & 0,25 & 17,4 & 0,2 & 7,2  & 5,9  & 11,1 & 0,1  & 0,1  \\
+            & M3     & 0    & 9,1  & 0,2 & 8,9  & ---  & ---  & ---  & ---  \\
+            & M3 x8  & 0,25 & 10,0 & 0,2 & 7,3  & 5,7  & 3,8  & 0,1  & 0,1  \\
+            & M3 x16 & 0,05 & 9,0  & 0,2 & 8,7  & 2,9  & 0,8  & 0,0  & 5,0  \\
+            &        & 0,25 & 7,6  & 0,3 & 7,3  & 2,9  & 3,8  & 0,1  & 0,6  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
 con OpenMP, occupancy, effetto della granularità adattiva, effetto della
 sovrapposizione fra trasferimenti e calcolo.}
