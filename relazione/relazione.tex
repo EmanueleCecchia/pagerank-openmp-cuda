@@ -1898,6 +1898,22 @@ RTX 2080 Ti & M2     & 0,25 & 17,4 & 0,2 & 7,2  & 5,9  & 11,1 & 0,1  & 0,1  \\
 \end{tabular}
 \end{table}
 
+\paragraph{Gli hub costano poco alla GPU.}
+Le quote piccole, che danno alla CPU i soli hub, non rendono quasi mai,
+e la ragione sta in un'ipotesi che le misure smentiscono: gli hub
+sono le righe che la GPU calcola meglio. Su \texttt{soc-LiveJournal1}, con la
+RTX 2080 Ti a x16, la quota 0,05 toglie alla GPU il 5\,\% degli archi,
+ma il suo accumulo scende solo da 8,86 a
+8,73~ms, l'1,5\,\%: quegli archi le costavano 0,04~ns l'uno, contro una media
+di 0,13. Il kernel a blocchi li legge con accessi coalescenti, e su righe così
+lunghe i thread del blocco restano tutti al lavoro. La copia di
+\texttt{contrib}, invece, è il costo fisso della versione ibrida, $8N$ byte per
+iterazione qualunque sia la quota,
+e per guadagnare la CPU deve togliere alla GPU abbastanza lavoro
+da ripagarlo. Sulla GTX 1050 Ti, dove ogni arco costa alla GPU molto di più,
+basta poco; sulle GPU più veloci servono quote alte, che però allungano la
+strada della CPU oltre quella della GPU.
+
 \daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
 con OpenMP, occupancy, effetto della granularità adattiva, effetto della
 sovrapposizione fra trasferimenti e calcolo.}
