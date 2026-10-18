@@ -295,8 +295,8 @@ To pick or rename them, give one `--machine` per machine, with its folder or CSV
 `plot_hybrid.py` draws the figure of the hybrid build, `relazione/figure/quote.pdf`:
 for each graph, its speed-up over the GPU alone at every share of the edges for
 the CPU, in double precision, one curve per GPU. By default it takes the GPU of
-Machine 1 and the two of Machine 3; `--config NAME path`, given up to three
-times, picks others.
+Machine 1, the GTX 1080 Ti of Machine 2 and the two of Machine 3; `--config NAME path`,
+given up to four times, picks others.
 `plot_degrees.py` reads the `.csr` files and draws `relazione/figure/predecessori.pdf`:
 for each graph, how many nodes have a given number of in-neighbours, coloured
 by the class the GPU gives those rows; it also prints, per graph, the share of
