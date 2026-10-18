@@ -85,7 +85,7 @@ saturazione oltre il numero di core fisici che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
 
-La versione ibrida è stata misurata su quattro GPU di tre macchine.
+La versione ibrida è stata misurata su cinque GPU di tre macchine.
 Da sola, una RTX 2080 Ti è da $1{,}4$ a $2{,}9$ volte più veloce dei 24 thread
 della CPU a 12 core. Dividere il lavoro fra CPU e GPU conviene quando le due,
 usate da sole, impiegano tempi simili: su un portatile, dove una GTX 1050 Ti
@@ -1961,7 +1961,15 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     divisioni da $M$ a $N$, ma soprattutto lascia una lettura sola per arco.
   \item \textbf{Verifica indipendente e collaudata.} Tre implementazioni
     concordano, e lo strumento di verifica è
-    stato validato con un'iniezione di guasto.
+    stato validato con anche un'iniezione di guasto.
+  \item \textbf{Un solo codice per la GPU sola e per l'ibrida.} Con
+    quota 0 la versione ibrida è la versione solo GPU, senza copie e senza
+    thread OpenMP: le due non possono divergere, e il confronto fra loro misura
+    soltanto l'effetto della quota.
+  \item \textbf{Portabilità verificata.} Lo stesso sorgente, ricompilato
+    su ogni macchina, è stato eseguito senza modifiche su cinque
+    GPU, di tre modelli e due architetture, con tre versioni del CUDA Toolkit;
+    griglie e memoria sono dimensionate a tempo di esecuzione.
 \end{itemize}
 
 \subsection{Punti deboli e limiti}
