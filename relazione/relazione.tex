@@ -992,7 +992,10 @@ gli hub, pochi e lunghi, adatti alla bassa latenza dei suoi core, e alla GPU le
 righe corte, numerose e simili fra loro, adatte al suo throughput. La
 ripartizione fra CPU e GPU si chiede con l'opzione \texttt{-s}, la
 \emph{quota}: la frazione degli archi, fra 0 e 1, da assegnare alla CPU; con
-\texttt{-s 0.25} si chiede per la CPU un quarto degli archi.
+\texttt{-s 0.25} si chiede per la CPU un quarto degli archi. La quota 1 non
+equivale alla versione OpenMP: anche con tutte le righe alla CPU,
+\texttt{contrib\_kernel} resta sulla GPU, e a ogni iterazione \texttt{contrib}
+passa all'host e i rank tornano alla GPU.
 \texttt{host\_threshold} parte dalle righe più lunghe e scende una lunghezza
 alla volta, prendendo ogni volta tutte le righe di quella lunghezza, finché gli
 archi raccolti non supererebbero la quota chiesta; l'ultima lunghezza presa è
