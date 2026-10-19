@@ -1986,9 +1986,9 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     bus a ogni iterazione, $8N$ byte in doppia precisione: è il costo che
     decide la convenienza della versione ibrida
     (Sezione~\ref{sec:ibrida-risultati}).
-  \item \textbf{Thread inattivi sulle righe della CPU.} Con
-    \texttt{schedule(dynamic,~16)} le righe della CPU vanno ai thread in
-    chunk di 16: quando sono poche e lunghe, finiscono in pochi chunk,
+  \item \textbf{Thread inattivi sulle righe della CPU.} Nella versione ibrida
+    l'accumulo della CPU usa \texttt{schedule(dynamic,~16)}: le righe vanno ai
+    thread in chunk di 16, e quando sono poche e lunghe finiscono in pochi chunk,
     e lavorano pochi thread, a volte uno solo, mentre gli altri restano fermi
     (Sezione~\ref{sec:ibrida-risultati}).
 \end{itemize}
@@ -2007,7 +2007,7 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     messaggio invece di fallire più avanti.
   \fi
   \item \textbf{Ricerca su politica di scheduling e dimensione del chunk.}
-    Il chunk di \texttt{schedule(dynamic, 256)}, fissato a 256 senza una
+    Nella versione OpenMP il chunk di \texttt{schedule(dynamic, 256)}, fissato a 256 senza una
     ricerca sistematica, non governa solo il bilanciamento del carico:
     chunk più ampi danno a un thread più righe consecutive, quindi più riuso delle
     linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
@@ -2029,8 +2029,8 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     potrebbe trovarla da solo nelle prime iterazioni: se a fine iterazione
     la CPU ha aspettato la GPU, le cede altre righe; se invece è la GPU ad
     aver aspettato, gliene toglie.
-  \item \textbf{Copiare solo i contributi che servono alla CPU.} Le
-    righe della CPU non leggono tutto \texttt{contrib}: su
+  \item \textbf{Copiare solo i contributi che servono alla CPU.} Nella
+    versione ibrida, le righe della CPU non leggono tutto \texttt{contrib}: su
     \texttt{soc-LiveJournal1} a quota 0,25 i loro predecessori distinti sono
     il 36\,\% dei nodi. Un kernel che raccogliesse quei soli contributi in un
     vettore compatto ridurrebbe la copia a circa un terzo: sulla RTX 2080 Ti
@@ -2038,7 +2038,8 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     guadagno dipende dal grafo: su \texttt{wiki-topcats}, alla stessa quota, i
     predecessori distinti sono l'89\,\% dei nodi.
   \item \textbf{Righe della CPU una alla volta.} Con
-    \texttt{schedule(dynamic,~1)} nell'accumulo della CPU ogni thread prenderebbe
+    \texttt{schedule(dynamic,~1)} nell'accumulo della CPU della versione
+    ibrida ogni thread prenderebbe
     una riga per volta: su righe così lunghe il costo della distribuzione è
     trascurabile, e nessun thread resterebbe inattivo.
   \item \textbf{Accumulare in singola precisione nella variante
