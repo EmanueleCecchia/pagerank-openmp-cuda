@@ -1973,6 +1973,7 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
 \end{itemize}
 
 \subsection{Punti deboli e limiti}
+\label{sec:limiti}
 \begin{itemize}
   \item \textbf{Il convertitore non scala oltre le istanze usate.} Il
     convertitore Python mantiene l'intera edge list in memoria: se in futuro
@@ -1980,6 +1981,16 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
   \item \textbf{Formato binario non standard.} Il formato \texttt{.csr} è
     specifico del progetto: è velocissimo da caricare e tiene il programma C
     libero da un parser, ma non è ispezionabile con strumenti esterni.
+  \item \textbf{La copia di \texttt{contrib} a ogni iterazione.} Con
+    qualunque quota diversa da 0, l'intero vettore \texttt{contrib} passa sul
+    bus a ogni iterazione, $8N$ byte in doppia precisione: è il costo che
+    decide la convenienza della versione ibrida
+    (Sezione~\ref{sec:ibrida-risultati}).
+  \item \textbf{Thread inattivi sulle righe della CPU.} Con
+    \texttt{schedule(dynamic,~16)} le righe della CPU vanno ai thread a
+    pacchetti di 16: quando sono poche e lunghe, finiscono in pochi pacchetti,
+    e lavorano pochi thread, a volte uno solo, mentre gli altri restano fermi
+    (Sezione~\ref{sec:ibrida-risultati}).
   \item \textbf{Dimensione della porzione dinamica non ottimizzata.} Il
     valore 256 di \texttt{schedule(dynamic, 256)} non è stato oggetto di
     una ricerca sistematica.
@@ -1988,13 +1999,15 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
 \subsection{Possibili miglioramenti}
 \begin{itemize}
   \iffalse
-  \item \textbf{Gestione out-of-core.} Una
-    logica di streaming per grafi eccedenti la memoria della GPU, che
-    per le istanze considerate non è necessaria.
-    Resta un possibile sviluppo futuro, subordinato però alla riscrittura
-    del convertitore.
-  \item \textbf{Granularità adattiva sulla GPU.} Le misure di
-    Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate.
+  \item \textbf{Nessuna gestione \emph{out-of-core}.}
+    Per i grafi che non stanno nella memoria della GPU.
+    Nessuna istanza la richiede: la più grande occupa
+    sulla GPU circa 450~MiB, l'11\,\% della memoria della GTX 1050 Ti, e per
+    superarla servirebbe un grafo nove volte più grande, oltre 600 milioni di
+    archi, che il convertitore Python, con il suo centinaio di byte per arco,
+    non potrebbe preparare con meno di 60~GB di memoria. Il programma
+    controlla comunque la memoria libera prima di allocare, e si ferma con un
+    messaggio invece di fallire più avanti.
   \fi
   \item \textbf{Ricerca su politica di scheduling e dimensione del blocco.}
     Il parametro non governa solo il bilanciamento del carico: blocchi più
