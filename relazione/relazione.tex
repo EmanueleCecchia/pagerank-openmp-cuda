@@ -2015,24 +2015,38 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
     dal grafo; varrebbe la pena cercarlo, confrontando anche politiche come
     \texttt{guided}.
-  \item \nuovo{\textbf{Soglie della granularità adattiva.} Nella versione
+  \item \textbf{Soglie della granularità adattiva.} Nella versione
     ibrida la GPU dà un thread alle righe fino a 16 predecessori, un warp a
     quelle fino a 256 e un blocco alle più lunghe (opzione \texttt{-b}).
     Queste due soglie sono state fissate dopo poche prove, senza
     un'analisi approfondita, e quelle migliori dipendono verosimilmente dal
-    grafo e dalla GPU: andrebbero cercate in modo sistematico, misurando il
-    gather al variare delle due soglie. Le soglie 4 e 32 della
-    Tabella~\ref{tab:bins} servono invece solo a illustrare l'idea.}
-  \item \nuovo{\textbf{Bilanciamento automatico della quota.} Nella versione
+    grafo e dalla GPU: andrebbero cercate in modo sistematico, misurando
+    i tempi di accumulo al variare delle due soglie e confrontandoli con quelli del
+    kernel ingenuo, un thread per riga, che non è stato misurato.
+  \item \textbf{Bilanciamento automatico della quota.} Nella versione
     ibrida la quota di archi assegnata alla CPU è un parametro
     (\texttt{-s}), e la migliore è quella con cui CPU e GPU finiscono il
     proprio lavoro insieme: dipende quindi dal grafo e dal rapporto fra la
     velocità della CPU e quella della GPU della macchina. Il programma
     potrebbe trovarla da solo nelle prime iterazioni: se a fine iterazione
     la CPU ha aspettato la GPU, le cede altre righe; se invece è la GPU ad
-    aver aspettato, gliene toglie. Sarebbe l'estensione naturale del
-    requisito di portabilità alla ripartizione del lavoro, che oggi si
-    sceglie a mano.}
+    aver aspettato, gliene toglie.
+  \item \textbf{Copiare solo i contributi che servono alla CPU.} Le
+    righe della CPU non leggono tutto \texttt{contrib}: su
+    \texttt{soc-LiveJournal1} a quota 0,25 i loro predecessori distinti sono
+    il 36\,\% dei nodi. Un kernel che raccogliesse quei soli contributi in un
+    vettore compatto ridurrebbe la copia a circa un terzo: sulla RTX 2080 Ti
+    a x8 da 5,7 a circa 2~ms, abbastanza perché anche lì la quota 0,25 batta la GPU sola. Il
+    guadagno dipende dal grafo: su \texttt{wiki-topcats}, alla stessa quota, i
+    predecessori distinti sono l'89\,\% dei nodi.
+  \item \textbf{Righe della CPU una alla volta.} Con
+    \texttt{schedule(dynamic,~1)} nell'accumulo della CPU ogni thread prenderebbe
+    una riga per volta: su righe così lunghe il costo della distribuzione è
+    trascurabile, e nessun thread resterebbe inattivo.
+  \item \textbf{Accumulare in singola precisione nella variante
+    \texttt{float}.} Se il rallentamento della singola precisione sulla GPU
+    viene dalla conversione dei contributi in \texttt{double}, accumulare in
+    \texttt{float} lo eliminerebbe.
 \end{itemize}
 
 \daFare{Aggiungere la valutazione personale complessiva una volta
