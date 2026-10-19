@@ -767,7 +767,7 @@ mentre lo scheduling è \texttt{dynamic}: la lunghezza delle righe varia di
 ordini di grandezza, quindi una suddivisione statica assegnerebbe a ogni
 thread lo stesso \emph{numero di righe} ma non la stessa \emph{quantità di
 lavoro}, lasciando inattivi i thread che hanno ricevuto solo nodi di grado
-basso. La dimensione del blocco (256) è un parametro che va calibrato provando.
+basso. La dimensione del chunk (256) è un parametro che va calibrato provando.
 
 \paragraph{Alternanza dei buffer.}
 L'iterazione alterna due vettori (\texttt{rank} e
@@ -1616,8 +1616,8 @@ e rende proprio dove la Macchina 1 aspetta la RAM.
 \centering
 \caption{Località della lettura sparsa su \texttt{contrib}. Il salto è la
 mediana di \texttt{col\_idx[j+1] - col\_idx[j]} all'interno di una riga; le
-linee di cache distinte sono contate su blocchi di 256 righe, che è l'unità di
-schedulazione del ciclo, e divise per il numero di archi danno le linee per
+linee di cache distinte sono contate su chunk di 256 righe, l'unità con cui
+il ciclo distribuisce le righe ai thread, e divise per il numero di archi danno le linee per
 arco; le letture per iterazione sono il volume che ne risulta.
 Misure prodotte da \texttt{tools/locality\_stats.py} dai file \texttt{.csr};
 i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling} per
@@ -1930,11 +1930,11 @@ Su \texttt{web-Stanford} e \texttt{web-BerkStan} l'accumulo della CPU
 non cresce in modo regolare con la quota. Sulla RTX 2080 Ti della Macchina 3,
 a x16, quello di \texttt{web-Stanford} dura per iterazione 0,33~ms a quota
 0,05, 0,61~ms a 0,1, 0,82~ms a 0,25 e solo 0,48~ms a 0,5, pur con il doppio
-degli archi rispetto a 0,25. L'accumulo della CPU dà le righe ai thread a
-pacchetti di 16,
+degli archi rispetto a 0,25. L'accumulo della CPU dà le righe ai thread in
+chunk di 16,
 \texttt{schedule(dynamic,~16)}, e su questi grafi le righe della CPU sono poche
 e lunghissime. Su \texttt{web-Stanford}, a quota 0,05 e 0,1 sono 4 e 10, un
-solo pacchetto: lavora un solo thread su 24. A 0,25 sono 92, sei pacchetti, e
+solo chunk: lavora un solo thread su 24. A 0,25 sono 92, sei chunk, e
 lavorano sei thread. A 0,5 sono 2\,519, e lavorano tutti i 24 thread. Conta
 quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
 
@@ -1987,13 +1987,10 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     decide la convenienza della versione ibrida
     (Sezione~\ref{sec:ibrida-risultati}).
   \item \textbf{Thread inattivi sulle righe della CPU.} Con
-    \texttt{schedule(dynamic,~16)} le righe della CPU vanno ai thread a
-    pacchetti di 16: quando sono poche e lunghe, finiscono in pochi pacchetti,
+    \texttt{schedule(dynamic,~16)} le righe della CPU vanno ai thread in
+    chunk di 16: quando sono poche e lunghe, finiscono in pochi chunk,
     e lavorano pochi thread, a volte uno solo, mentre gli altri restano fermi
     (Sezione~\ref{sec:ibrida-risultati}).
-  \item \textbf{Dimensione della porzione dinamica non ottimizzata.} Il
-    valore 256 di \texttt{schedule(dynamic, 256)} non è stato oggetto di
-    una ricerca sistematica.
 \end{itemize}
 
 \subsection{Possibili miglioramenti}
@@ -2009,9 +2006,10 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     controlla comunque la memoria libera prima di allocare, e si ferma con un
     messaggio invece di fallire più avanti.
   \fi
-  \item \textbf{Ricerca su politica di scheduling e dimensione del blocco.}
-    Il parametro non governa solo il bilanciamento del carico: blocchi più
-    ampi danno a un thread più righe consecutive, quindi più riuso delle
+  \item \textbf{Ricerca su politica di scheduling e dimensione del chunk.}
+    Il chunk di \texttt{schedule(dynamic, 256)}, fissato a 256 senza una
+    ricerca sistematica, non governa solo il bilanciamento del carico:
+    chunk più ampi danno a un thread più righe consecutive, quindi più riuso delle
     linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
     dal grafo; varrebbe la pena cercarlo, confrontando anche politiche come
     \texttt{guided}.
@@ -2046,7 +2044,8 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
   \item \textbf{Accumulare in singola precisione nella variante
     \texttt{float}.} Se il rallentamento della singola precisione sulla GPU
     viene dalla conversione dei contributi in \texttt{double}, accumulare in
-    \texttt{float} lo eliminerebbe.
+    \texttt{float} lo eliminerebbe, a prezzo dell'accuratezza, da verificare
+    sulla soglia di convergenza.
 \end{itemize}
 
 \daFare{Aggiungere la valutazione personale complessiva una volta
