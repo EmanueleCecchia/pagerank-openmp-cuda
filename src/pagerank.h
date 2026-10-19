@@ -27,7 +27,7 @@ typedef struct {
     double tolerance;   /* stop once the L1 change falls below this */
     int    max_iters;   /* stops the loop if the tolerance is never reached */
     /* hybrid build only, ignored by the others: the granularity classes of
-     * the GPU's gather, and the share of the edges whose rows go to the CPU
+     * the GPU's accumulation, and the share of the edges whose rows go to the CPU
      * instead, the longest rows first (0 leaves every row to the GPU) */
     uint64_t thread_max;
     uint64_t warp_max;

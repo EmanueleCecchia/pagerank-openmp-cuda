@@ -1,11 +1,12 @@
 /* PageRank on the GPU and the CPU together, the hybrid version:
  * the two loops of every iteration turned into
- * CUDA kernels, and part of the gather left to the OpenMP threads of the host.
+ * CUDA kernels, and part of the accumulation left to the OpenMP threads of
+ * the host.
  *
  * The graph goes to the device once, before the clock starts,
  * and the ranks come back once, after it stops.
  *
- * The gather adapts its granularity to the length of the rows:
+ * The accumulation adapts its granularity to the length of the rows:
  * short rows get a thread each,
  * medium rows a warp, long rows a whole block.
  *
@@ -39,7 +40,7 @@
 enum { SCALAR_DANGLING, SCALAR_ERROR, N_SCALARS };
 
 /* Granularity classes, in the order their rows are stored.  The last is the
- * CPU's: its rows are gathered on the host. */
+ * CPU's: its rows are accumulated on the host. */
 enum { CLASS_THREAD, CLASS_WARP, CLASS_BLOCK, CLASS_HOST, N_CLASSES };
 
 
@@ -108,7 +109,7 @@ __device__ accum_t block_sum(accum_t v)
         /* lanes 0-7 take the 8 totals, the other lanes add nothing */
         v = warp_sum(lane < BLOCK / WARP ? warp_total[lane] : 0.0);
     }
-    /* Second barrier: gather_block_rows() calls this once per row, and no
+    /* Second barrier: accumulate_block_rows() calls this once per row, and no
      * warp may write the totals of the next row while warp 0 is still
      * reading those of this one. */
     __syncthreads();
@@ -163,7 +164,7 @@ __global__ void contrib_kernel(uint64_t n, const uint32_t *__restrict__ out_deg,
 }
 
 /* The base every rank starts from, (1-d)/N plus the dangling mass spread
- * over all nodes.  Complete when a gather kernel reads it: contrib_kernel
+ * over all nodes.  Complete when an accumulate kernel reads it: contrib_kernel
  * ran to the end first, the kernels being queued on the same stream.
  * __host__ as well: the CPU's rows start from it too. */
 __host__ __device__ double rank_base(uint64_t n, double d, const accum_t *scalars)
@@ -179,13 +180,13 @@ __host__ __device__ double rank_base(uint64_t n, double d, const accum_t *scalar
  * Cheap only while rows are short: the 32 threads of a warp walk 32 rows at
  * once, so their reads of col_idx land in 32 different places, and the warp
  * moves on only when its longest row is done. */
-__global__ void gather_thread_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
-                                   uint64_t n, double d,
-                                   const uint64_t *__restrict__ row_ptr,
-                                   const uint32_t *__restrict__ col_idx,
-                                   const rank_t *__restrict__ contrib,
-                                   const rank_t *__restrict__ cur,
-                                   rank_t *__restrict__ nxt, accum_t *scalars)
+__global__ void accumulate_thread_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
+                                       uint64_t n, double d,
+                                       const uint64_t *__restrict__ row_ptr,
+                                       const uint32_t *__restrict__ col_idx,
+                                       const rank_t *__restrict__ contrib,
+                                       const rank_t *__restrict__ cur,
+                                       rank_t *__restrict__ nxt, accum_t *scalars)
 {
     const uint64_t stride = (uint64_t)gridDim.x * blockDim.x;
     const double base = rank_base(n, d, scalars);
@@ -211,13 +212,13 @@ __global__ void gather_thread_rows(uint64_t n_rows, const uint32_t *__restrict__
  * row, so the 32 lanes read 32 consecutive entries of col_idx together, in
  * one or two memory transactions instead of 32; then a shuffle reduction
  * adds up their partial sums. */
-__global__ void gather_warp_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
-                                 uint64_t n, double d,
-                                 const uint64_t *__restrict__ row_ptr,
-                                 const uint32_t *__restrict__ col_idx,
-                                 const rank_t *__restrict__ contrib,
-                                 const rank_t *__restrict__ cur,
-                                 rank_t *__restrict__ nxt, accum_t *scalars)
+__global__ void accumulate_warp_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
+                                     uint64_t n, double d,
+                                     const uint64_t *__restrict__ row_ptr,
+                                     const uint32_t *__restrict__ col_idx,
+                                     const rank_t *__restrict__ contrib,
+                                     const rank_t *__restrict__ cur,
+                                     rank_t *__restrict__ nxt, accum_t *scalars)
 {
     const uint64_t warps = (uint64_t)gridDim.x * (BLOCK / WARP);
     const int lane = threadIdx.x % WARP;
@@ -247,13 +248,13 @@ __global__ void gather_warp_rows(uint64_t n_rows, const uint32_t *__restrict__ r
 
 /* Long rows, the hubs of the power law: one block per row, the same scheme
  * as the warp one with BLOCK threads instead of 32. */
-__global__ void gather_block_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
-                                  uint64_t n, double d,
-                                  const uint64_t *__restrict__ row_ptr,
-                                  const uint32_t *__restrict__ col_idx,
-                                  const rank_t *__restrict__ contrib,
-                                  const rank_t *__restrict__ cur,
-                                  rank_t *__restrict__ nxt, accum_t *scalars)
+__global__ void accumulate_block_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
+                                      uint64_t n, double d,
+                                      const uint64_t *__restrict__ row_ptr,
+                                      const uint32_t *__restrict__ col_idx,
+                                      const rank_t *__restrict__ contrib,
+                                      const rank_t *__restrict__ cur,
+                                      rank_t *__restrict__ nxt, accum_t *scalars)
 {
     const double base = rank_base(n, d, scalars);
     accum_t error = 0.0;   /* only thread 0 adds to it */
@@ -414,14 +415,14 @@ static int group_rows(const csr_graph *g, const pagerank_params *params,
     return 0;
 }
 
-/* The CPU's share of the gather, by the OpenMP threads.  The same sum as
- * gather_thread_rows(), over the rows the CPU took, reading contrib from the
+/* The CPU's share of the accumulation, by the OpenMP threads.  The same sum as
+ * accumulate_thread_rows(), over the rows the CPU took, reading contrib from the
  * copy the GPU sent.  ranks[i] holds the rank of rows[i] at the previous
  * iteration and receives the new one: packed in the order of rows, they go
  * back to the device in a single copy.  Returns the L1 change over these
  * rows. */
-static accum_t gather_host_rows(const csr_graph *g, uint64_t n_rows, const uint32_t *rows,
-                                double base, double d, const rank_t *contrib, rank_t *ranks)
+static accum_t accumulate_host_rows(const csr_graph *g, uint64_t n_rows, const uint32_t *rows,
+                                    double base, double d, const rank_t *contrib, rank_t *ranks)
 {
     accum_t error = 0.0;
     uint64_t i;
@@ -586,11 +587,11 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     }
     grid_contrib       = grid_size((const void *)contrib_kernel, prop.multiProcessorCount,
                                    (n + BLOCK - 1) / BLOCK);
-    grid[CLASS_THREAD] = grid_size((const void *)gather_thread_rows, prop.multiProcessorCount,
+    grid[CLASS_THREAD] = grid_size((const void *)accumulate_thread_rows, prop.multiProcessorCount,
                                    (count[CLASS_THREAD] + BLOCK - 1) / BLOCK);
-    grid[CLASS_WARP]   = grid_size((const void *)gather_warp_rows, prop.multiProcessorCount,
+    grid[CLASS_WARP]   = grid_size((const void *)accumulate_warp_rows, prop.multiProcessorCount,
                                    (count[CLASS_WARP] + BLOCK / WARP - 1) / (BLOCK / WARP));
-    grid[CLASS_BLOCK]  = grid_size((const void *)gather_block_rows, prop.multiProcessorCount,
+    grid[CLASS_BLOCK]  = grid_size((const void *)accumulate_block_rows, prop.multiProcessorCount,
                                    count[CLASS_BLOCK]);
     grid[CLASS_HOST]   = grid_size((const void *)scatter_host_ranks, prop.multiProcessorCount,
                                    (count[CLASS_HOST] + BLOCK - 1) / BLOCK);
@@ -609,9 +610,9 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
                                                            d_scalars);
         if (count[CLASS_HOST] > 0) {
             /* contrib, and the dangling mass with it, to the host.  The copy
-             * stream waits for contrib_kernel alone, not for the gather
+             * stream waits for contrib_kernel alone, not for the accumulate
              * kernels queued after it: the copy engine moves the vector
-             * while the GPU gathers its own rows. */
+             * while the GPU accumulates its own rows. */
             HANDLE_ERROR(cudaEventRecord(contrib_done, stream));
             HANDLE_ERROR(cudaStreamWaitEvent(copy_stream, contrib_done, 0));
             HANDLE_ERROR(cudaMemcpyAsync(h_contrib, d_contrib, vector_bytes,
@@ -622,17 +623,17 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         }
         /* An empty class launches nothing: a grid of zero blocks is an error. */
         if (count[CLASS_THREAD] > 0) {
-            gather_thread_rows<<<grid[CLASS_THREAD], BLOCK, 0, stream>>>(
+            accumulate_thread_rows<<<grid[CLASS_THREAD], BLOCK, 0, stream>>>(
                 count[CLASS_THREAD], class_rows[CLASS_THREAD], n, d,
                 d_row_ptr, d_col_idx, d_contrib, cur, nxt, d_scalars);
         }
         if (count[CLASS_WARP] > 0) {
-            gather_warp_rows<<<grid[CLASS_WARP], BLOCK, 0, stream>>>(
+            accumulate_warp_rows<<<grid[CLASS_WARP], BLOCK, 0, stream>>>(
                 count[CLASS_WARP], class_rows[CLASS_WARP], n, d,
                 d_row_ptr, d_col_idx, d_contrib, cur, nxt, d_scalars);
         }
         if (count[CLASS_BLOCK] > 0) {
-            gather_block_rows<<<grid[CLASS_BLOCK], BLOCK, 0, stream>>>(
+            accumulate_block_rows<<<grid[CLASS_BLOCK], BLOCK, 0, stream>>>(
                 count[CLASS_BLOCK], class_rows[CLASS_BLOCK], n, d,
                 d_row_ptr, d_col_idx, d_contrib, cur, nxt, d_scalars);
         }
@@ -640,13 +641,13 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
 
         if (count[CLASS_HOST] > 0) {
             /* The kernels are queued and run on their own: the host is free
-             * to gather the CPU's rows, as soon as contrib has arrived.
-             * Their ranks go back behind the gather kernels, in time for the
+             * to accumulate the CPU's rows, as soon as contrib has arrived.
+             * Their ranks go back behind the accumulate kernels, in time for the
              * next contrib_kernel, which needs every node. */
             HANDLE_ERROR(cudaEventSynchronize(contrib_copied));
-            host_error = gather_host_rows(g, count[CLASS_HOST], host_rows,
-                                          rank_base(n, d, h_scalars), d,
-                                          h_contrib, h_host_ranks);
+            host_error = accumulate_host_rows(g, count[CLASS_HOST], host_rows,
+                                              rank_base(n, d, h_scalars), d,
+                                              h_contrib, h_host_ranks);
             HANDLE_ERROR(cudaMemcpyAsync(d_host_ranks, h_host_ranks, host_bytes,
                                          cudaMemcpyHostToDevice, stream));
             scatter_host_ranks<<<grid[CLASS_HOST], BLOCK, 0, stream>>>(
@@ -656,7 +657,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
 
         /* The host waits here for the whole iteration: it needs the error to
          * decide whether to launch the next one.  The wait covers the copy
-         * of h_host_ranks too, which the next gather_host_rows() overwrites. */
+         * of h_host_ranks too, which the next accumulate_host_rows() overwrites. */
         HANDLE_ERROR(cudaMemcpyAsync(h_scalars, d_scalars, N_SCALARS * sizeof(accum_t),
                                    cudaMemcpyDeviceToHost, stream));
         HANDLE_ERROR(cudaStreamSynchronize(stream));

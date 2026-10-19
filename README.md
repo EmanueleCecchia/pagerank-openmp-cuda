@@ -1,8 +1,11 @@
 # PageRank on Hybrid Architectures (OpenMP + CUDA)
 
-PageRank over large sparse graphs, in three versions built from one set of
-sources: a sequential baseline, a pure-OpenMP one, and a hybrid OpenMP+CUDA
-one, which with no work for the CPU is the GPU-only version.
+PageRank over large sparse graphs, in four versions:
+a sequential baseline, a pure-OpenMP, a GPU-only and a hybrid OpenMP+CUDA. 
+They come in pairs: the sequential and the OpenMP
+versions are the same source compiled without and with `-fopenmp`; the
+GPU-only and the hybrid ones are the same executable, run with no work for
+the CPU (`-s 0`) or with some.
 
 This file is the usage guide: how to build, get the data, run, check the
 results and reproduce the experiments. The problem, the design choices and
@@ -142,7 +145,7 @@ machine with more than one, `CUDA_VISIBLE_DEVICES` picks it:
 CUDA_VISIBLE_DEVICES=1 ./build/pagerank_hybrid data/snap/web-Google.csr
 ```
 
-In the hybrid builds the CPU gathers the longest rows, from the longest down
+In the hybrid builds the CPU accumulates the longest rows, from the longest down
 until they hold the share of the edges `-s` asks for, and the GPU the others;
 the output says which rows the CPU took. `-s 0` gives the CPU
 nothing, and is the GPU-only version: the same code, with nothing to copy
@@ -266,8 +269,8 @@ tracing the CUDA calls only, and its report is kept in
 `results/<machine>/nsys/` (gitignored; to look at one, open it with
 `nsys-ui`, the graphical viewer of Nsight Systems). At the end
 `tools/nsys_phases.py` reads from each report how that
-run's iterations split up — the GPU's gather, the copy of `contrib` to the
-host, the CPU's gather, the ranks going back, the waits — and writes
+run's iterations split up — the GPU's accumulation, the copy of `contrib` to
+the host, the CPU's accumulation, the ranks going back, the waits — and writes
 `results/<machine>/nsys_phases.csv`, one row for every hybrid row of
 `bench.csv`, from the very same run, with its time copied for checking.
 The profiler costs about 1% of the time. `NSYS=` runs without it.
@@ -276,6 +279,8 @@ The analysis tools read what the sweep produced:
 
 ```bash
 python3 tools/plot_results.py
+python3 tools/plot_hybrid.py
+python3 tools/plot_degrees.py
 python3 tools/hybrid_table.py results/machine1
 python3 tools/nsys_phases.py results/machine1
 python3 tools/locality_stats.py data/snap/*.csr
@@ -287,6 +292,16 @@ machine in each. Without `--machine` it takes the folders right under
 `results/` that have a `bench.csv`, which is where the CPU builds are.
 To pick or rename them, give one `--machine` per machine, with its folder or CSV:
 `--machine "Laptop 4c/8t" results/machine1 --machine "Workstation 12c/24t" results/machine3`.
+`plot_hybrid.py` draws the figure of the hybrid build, `relazione/figure/quote.pdf`:
+for each graph, its speed-up over the GPU alone at every share of the edges for
+the CPU, in double precision, one curve per GPU. By default it takes the GPU of
+Machine 1, the GTX 1080 Ti of Machine 2 and the two of Machine 3; `--config NAME path`,
+given up to four times, picks others.
+`plot_degrees.py` reads the `.csr` files and draws `relazione/figure/predecessori.pdf`:
+for each graph, how many nodes have a given number of in-neighbours, coloured
+by the class the GPU gives those rows; it also prints, per graph, the share of
+rows and edges in each class. `--soglie T,W` sets the classes as `-b` does
+(default 16,256).
 `hybrid_table.py` prints the times of the hybrid build, one row per graph and
 one column per share of the edges for the CPU, next to the best OpenMP time
 in the same `bench.csv`: in a GPU's own sub-folder there is none, and that
@@ -294,7 +309,8 @@ column shows `-`.
 `nsys_phases.py` rebuilds `nsys_phases.csv` from the reports, without running
 anything.
 `locality_stats.py` reports, per graph, the median index gap inside a row and
-the cache lines the gather touches: their count, per edge and per line, and
+the cache lines the scattered reads of `contrib` touch: their count, per edge
+and per line, and
 the MiB one iteration asks for.
 
 ## Project structure
@@ -304,8 +320,8 @@ the MiB one iteration asks for.
   the CPU taking the longest rows),
   `main.c` (driver), `csr_info.c` (graph statistics)
 - `tools/` — Python and shell helpers: conversion, verification, benchmark
-  sweep, figures, table of the hybrid times, phases of the hybrid iterations,
-  locality statistics
+  sweep, figures, table of the hybrid times, 
+  phases of the hybrid iterations, locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF
 - `results/` — one folder per machine, and inside it one per GPU when the
   machine has more than one: `bench.csv` (every run), `nsys_phases.csv` (the

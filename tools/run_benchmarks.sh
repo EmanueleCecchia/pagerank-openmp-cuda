@@ -134,7 +134,7 @@ fi
 # --show-output=false keeps the program's output in the report only: to echo
 # it on the console nsys 2022-2023 starts nsys-tee, which spins on a CPU of
 # its own, and with every logical CPU running an OpenMP thread the barrier of
-# the CPU's gather waits for the thread left without one -- on Machine 2 that
+# the CPU's accumulation waits for the thread left without one -- on Machine 2 that
 # added ~0.1 s to every run with a CPU share.  The output goes to /dev/null
 # here anyway.
 run_hybrid() {    # executable precision share repetition

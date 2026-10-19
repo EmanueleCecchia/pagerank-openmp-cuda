@@ -40,20 +40,22 @@ int main(int argc, char **argv)
     }
 
     /* One pass over the rows collects every figure we report.  The bins are
-     * the row-length classes the CUDA kernel will use to pick a granularity:
-     * one thread per short row, one warp per medium row, one block for the
-     * long tail of the power-law degree distribution.  Each bin is counted
-     * in rows and in edges because the two diverge: the long rows are a
-     * per-cent of the rows and most of the work. */
+     * the row-length classes of the CUDA kernel at the default thresholds of
+     * -b (src/pagerank.h): one thread per row up to 16 in-neighbours, one warp
+     * up to 256, one block beyond, for the long tail of the power-law degree
+     * distribution.  Empty rows fall in the thread class, as in the kernel.
+     * Each bin is counted in rows and in edges because the two diverge: the
+     * long rows are a per-cent of the rows and most of the work. */
     for (v = 0; v < g.n_nodes; v++) {
         len = g.row_ptr[v + 1] - g.row_ptr[v];
 
         if (len == 0) {
             no_in++;
-        } else if (len <= 4) {
+        }
+        if (len <= 16) {
             bin_thread++;
             edges_thread += len;
-        } else if (len <= 32) {
+        } else if (len <= 256) {
             bin_warp++;
             edges_warp += len;
         } else {
@@ -84,13 +86,13 @@ int main(int argc, char **argv)
     n_edges = g.n_edges > 0 ? (double)g.n_edges : 1.0;
 
     printf("  row length distribution (in-neighbours per row):\n");
-    printf("    1-4  (thread/row) %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
+    printf("    0-16   (thread/row) %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
            bin_thread, 100.0 * (double)bin_thread / n_rows,
            100.0 * (double)edges_thread / n_edges);
-    printf("    5-32 (warp/row)   %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
+    printf("    17-256 (warp/row)   %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
            bin_warp, 100.0 * (double)bin_warp / n_rows,
            100.0 * (double)edges_warp / n_edges);
-    printf("    >32  (block/row)  %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
+    printf("    >256   (block/row)  %12" PRIu64 "  (%5.1f%% of rows, %5.1f%% of edges)\n",
            bin_block, 100.0 * (double)bin_block / n_rows,
            100.0 * (double)edges_block / n_edges);
 

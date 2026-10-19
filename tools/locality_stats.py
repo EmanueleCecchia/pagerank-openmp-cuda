@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the locality of the contrib[col_idx[j]] gather over .csr graphs.
+"""Measure the locality of the scattered contrib[col_idx[j]] reads over .csr graphs.
 
 The kernel reads contrib out of order, one element per edge.  What that read
 costs does not depend on how many edges there are but on how many distinct
@@ -11,7 +11,8 @@ scheduling unit of the loop (schedule(dynamic, 256) in pagerank.c): inside a
 chunk the reuse is captured by the L1-L2 caches, across chunks it is not.
 
 Per graph it prints the distinct lines, the same count per edge and per line,
-and the gather volume one iteration asks for (distinct lines x 64 bytes):
+and the volume of those reads one iteration asks for (distinct lines x 64
+bytes):
 the columns behind the locality table of the report.
 
 Usage: python3 tools/locality_stats.py data/snap/*.csr
@@ -85,7 +86,7 @@ def main():
 
     print(f"{'graph':<18}{'N':>10}{'M':>12}{'row':>7}"
           f"{'contrib':>10}{'gap':>9}{'lines':>13}{'lines/edge':>12}"
-          f"{'edges/line':>12}{'gather':>11}")
+          f"{'edges/line':>12}{'reads':>11}")
     for p in paths:
         n, m, row_ptr, col_idx, _ = read_csr(p)
         deg = np.diff(row_ptr).astype(np.int64)

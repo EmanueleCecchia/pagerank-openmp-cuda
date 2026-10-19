@@ -1,4 +1,4 @@
-graph,precision,cpu_share,rep,seconds_total,iterations,iter_ms,contrib_ms,gpu_gather_ms,copy_ms,copy_mb,copy_gbs,wait_copy_ms,cpu_gather_ms,back_ms,back_mb,scatter_ms,wait_gpu_ms,upload_ms,upload_mb,download_ms
+graph,precision,cpu_share,rep,seconds_total,iterations,iter_ms,contrib_ms,gpu_accumulate_ms,copy_ms,copy_mb,copy_gbs,wait_copy_ms,cpu_accumulate_ms,back_ms,back_mb,scatter_ms,wait_gpu_ms,upload_ms,upload_mb,download_ms
 wiki-Vote,double,0,1,0.000990,16,0.0602,0.0037,0.0361,,,,,,,,,0.0375,0.0830,0.5855,0.0093
 wiki-Vote,double,0,2,0.000993,16,0.0601,0.0037,0.0361,,,,,,,,,0.0374,0.0831,0.5855,0.0093
 wiki-Vote,double,0,3,0.000985,16,0.0594,0.0037,0.0361,,,,,,,,,0.0374,0.0832,0.5855,0.0093

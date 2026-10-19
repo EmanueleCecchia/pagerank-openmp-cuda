@@ -66,13 +66,15 @@
 \section*{Abstract}
 % =====================================================================
 Il progetto implementa e analizza l'algoritmo PageRank su architetture
-parallele, confrontando tre versioni: una sequenziale, che fa da
-riferimento per ogni misura di speed-up, una puramente multicore basata su
-OpenMP e una ibrida che distribuisce il carico fra CPU e GPU tramite CUDA.
+parallele, confrontando quattro versioni: una sequenziale, che fa da
+riferimento per ogni misura di speed-up, una basata su OpenMP,
+una che usa la sola GPU e una ibrida che distribuisce il carico fra CPU e GPU.
 Sequenziale e OpenMP condividono lo stesso file sorgente e differiscono
 solo per le opzioni di compilazione, così che il riferimento non possa
 divergere dal codice parallelo né essere falsato dai costi di gestione dei
-thread. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
+thread. Allo stesso modo, la versione solo GPU è quella ibrida senza
+lavoro per la CPU: le due condividono l'eseguibile, e le distingue
+un'opzione a tempo di esecuzione. Il grafo è memorizzato trasposto in formato CSR, scelta che rende il
 nucleo di calcolo privo di scritture concorrenti e quindi parallelizzabile
 senza sincronizzazione. La correttezza è verificata contro tre
 implementazioni indipendenti. Le misure sulla versione OpenMP, condotte su
@@ -83,8 +85,14 @@ saturazione oltre il numero di core fisici che identifica il calcolo come
 \emph{memory-bound}: è questo il dato che motiva quantitativamente il
 passaggio alla GPU.
 
-\daFare{Aggiornare l'abstract con i risultati CUDA una volta completata la
-fase ibrida.}
+La versione ibrida è stata misurata su cinque GPU di tre macchine.
+Da sola, una RTX 2080 Ti è da $1{,}4$ a $2{,}9$ volte più veloce dei 24 thread
+della CPU a 12 core. Dividere il lavoro fra CPU e GPU conviene quando le due,
+usate da sole, impiegano tempi simili: su un portatile, dove una GTX 1050 Ti
+e 4 core vanno quasi alla pari, la versione ibrida è fino a $1{,}8$ volte più
+veloce della più rapida fra le due. Con GPU più veloci conviene quasi sempre lasciare
+tutto alla GPU, perché a ogni iterazione la CPU deve ricevere l'intero vettore
+dei contributi, e quella copia costa più del lavoro che la CPU restituisce.
 
 \tableofcontents
 \newpage
@@ -283,9 +291,12 @@ necessario distribuire il calcolo su più unità di elaborazione.
 % =====================================================================
 
 \subsection{Struttura del codice}
-Il progetto si compone di nove moduli, dei quali due soli formano il
-programma di calcolo vero e proprio: \texttt{src/pagerank.c}, che contiene il
-nucleo cronometrato, e \texttt{src/csr.c}, che porta il grafo in memoria prima
+Il progetto si compone di quattordici moduli, dei quali tre soli formano il
+programma di calcolo vero e proprio: \texttt{src/pagerank.c}
+e \texttt{src/pagerank\_cuda.cu}, che contengono il
+nucleo cronometrato --- il primo nelle versioni sequenziale e OpenMP, il
+secondo in quelle solo GPU e ibrida, e ogni eseguibile ne usa uno solo ---,
+e \texttt{src/csr.c}, che porta il grafo in memoria prima
 che il cronometro parta. Gli altri preparano i dati, guidano l'esecuzione o
 servono a controllare i risultati.
 \begin{center}
@@ -295,13 +306,18 @@ servono a controllare i risultati.
 \midrule
 \texttt{tools/snap\_to\_csr.py}       & conversione SNAP $\to$ CSR binario \\
 \texttt{src/csr.c},\ \texttt{csr.h}   & caricamento e validazione \\
-\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo \\
+\texttt{src/pagerank.c},\ \texttt{.h} & nucleo di calcolo sequenziale e OpenMP; interfaccia comune \\
+\texttt{src/pagerank\_cuda.cu}        & nucleo di calcolo delle versioni solo GPU e ibrida \\
 \texttt{src/main.c}                   & programma principale, output, log dei tempi \\
 \texttt{src/csr\_info.c}              & statistiche di un grafo convertito \\
 \texttt{tools/verify\_pagerank.py}    & verifica indipendente \\
 \texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
 \texttt{tools/plot\_results.py}       & figure di scalabilità \\
-\texttt{tools/locality\_stats.py}     & statistiche di località del gather \\
+\texttt{tools/locality\_stats.py}     & statistiche di località delle letture sparse \\
+\texttt{tools/nsys\_phases.py}        & fasi delle iterazioni ibride, dai profili \texttt{nsys} \\
+\texttt{tools/hybrid\_table.py}       & tabella dei tempi della versione ibrida \\
+\texttt{tools/plot\_hybrid.py}        & figura della versione ibrida \\
+\texttt{tools/plot\_degrees.py}       & figura e tabella delle classi di righe \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -665,8 +681,7 @@ memoria, e condividono un unico tipo, definito da un \texttt{typedef} che si
 può cambiare in fase di compilazione con \texttt{-DPAGERANK\_FLOAT}. La
 motivazione è che sulle GPU di fascia consumer
 l'aritmetica FP32 (\texttt{float}, 4 byte) è nettamente più veloce della FP64
-(\texttt{double}, 8 byte). Il kernel CUDA richiederà perciò verosimilmente
-\texttt{float}; mantenere entrambe le varianti raggiungibili dallo stesso
+(\texttt{double}, 8 byte). Mantenere entrambe le varianti raggiungibili dallo stesso
 sorgente permette di confrontarne accuratezza e velocità.
 
 Gli accumulatori --- \texttt{accum\_t} nel codice --- restano invece sempre in
@@ -752,7 +767,7 @@ mentre lo scheduling è \texttt{dynamic}: la lunghezza delle righe varia di
 ordini di grandezza, quindi una suddivisione statica assegnerebbe a ogni
 thread lo stesso \emph{numero di righe} ma non la stessa \emph{quantità di
 lavoro}, lasciando inattivi i thread che hanno ricevuto solo nodi di grado
-basso. La dimensione del blocco (256) è un parametro che va calibrato provando.
+basso. La dimensione del chunk (256) è un parametro che va calibrato provando.
 
 \paragraph{Alternanza dei buffer.}
 L'iterazione alterna due vettori (\texttt{rank} e
@@ -765,56 +780,373 @@ dispari.
 \subsection{Implementazione ibrida OpenMP + CUDA}
 \label{sec:cuda}
 
-\daFare{Sezione da scrivere interamente. Dovrà documentare:
-partizionamento del carico fra $V_{host}$ e $V_{device}$ in base al grado
-dei nodi; copiare i dati sulla GPU mentre il calcolo è già in corso,
-usando stream creati esplicitamente e \texttt{cudaMemcpyAsync};
-combinazione dell'errore di convergenza calcolato su CPU e GPU;
-dimensionamento di griglia e blocchi a runtime tramite
-\texttt{cudaGetDeviceProperties} e \texttt{cudaMemGetInfo}, come richiesto
-dal requisito di portabilità; granularità adattiva (un thread, un warp o un
-blocco per riga a seconda della sua lunghezza).}
+La versione ibrida sta in un solo file, \texttt{src/pagerank\_cuda.cu},
+che nella build ibrida prende il posto di \texttt{pagerank.c}: definisce la
+stessa funzione \texttt{pagerank()}, così che \texttt{main.c} e \texttt{csr.c}
+restino quelli delle altre versioni. Lo compila \texttt{nvcc}, che passa
+\texttt{-fopenmp} al compilatore dell'host per la parte di lavoro che resta
+alla CPU. I due cicli dell'Algoritmo~\ref{alg:seq} diventano kernel CUDA, e una
+parte delle righe del secondo, le più lunghe, le calcolano i thread OpenMP.
+Con l'opzione \texttt{-s 0} la CPU non riceve righe: è la versione solo GPU,
+lo stesso codice senza copie in più a ogni iterazione e senza avviare i thread
+OpenMP. Per le chiamate CUDA
+viene usata la macro \texttt{HANDLE\_ERROR}, che ferma il programma al primo
+errore indicandone il punto.
+
+\stacco
+La Figura~\ref{fig:panoramica} riassume le fasi del programma e, in
+dettaglio, la preparazione che precede il cronometro.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  >=latex,
+  fase/.style={draw,semithick,rounded corners=3pt,align=center,
+               text width=2.45cm,minimum height=1.45cm,font=\footnotesize},
+  passo/.style={draw,semithick,rounded corners=3pt,align=center,
+                text width=4.3cm,minimum height=1.2cm,font=\footnotesize},
+  freccia/.style={->,semithick},
+  zoom/.style={gray,densely dashed}
+]
+% ---- le fasi del programma
+\node[fase,fill=green!15] (a) at (0,0)
+  {\textbf{Conversione}\\ \scriptsize SNAP $\to$ CSR,\\ \scriptsize una volta sola};
+\node[fase,fill=green!15] (b) at (3.1,0)
+  {\textbf{Caricamento}\\ \scriptsize opzioni,\\ \scriptsize\texttt{csr\_load}};
+\node[fase,fill=blue!13] (c) at (6.2,0)
+  {\textbf{Preparazione}\\ \scriptsize classi, memoria,\\ \scriptsize copie, griglie};
+\node[fase,fill=blue!13] (d) at (9.3,0)
+  {\textbf{Iterazioni}\\ \scriptsize cronometrate, fino\\ \scriptsize a convergenza};
+\node[fase,fill=blue!13] (e) at (12.4,0)
+  {\textbf{Risultati}\\ \scriptsize rank finali all'host};
+\draw[freccia] (a.east) -- (b.west);
+\draw[freccia] (b.east) -- (c.west);
+\draw[freccia] (c.east) -- (d.west);
+\draw[freccia] (d.east) -- (e.west);
+% ---- la preparazione in dettaglio, sotto la sua fase
+\draw[zoom,rounded corners=4pt] (-1.35,-1.75) rectangle (13.75,-5.3);
+\draw[zoom] (c.south west) -- (-1.35,-1.75);
+\draw[zoom] (c.south east) -- (13.75,-1.75);
+\node[passo,fill=green!15] (p1) at (1.1,-2.65)
+  {\textbf{Righe della CPU}\\ \scriptsize\texttt{host\_threshold}, quota \texttt{-s}};
+\node[passo,fill=green!15] (p2) at (6.2,-2.65)
+  {\textbf{Classi delle righe}\\ \scriptsize\texttt{group\_rows}, array \texttt{rows}};
+\node[passo,fill=blue!13] (p3) at (11.3,-2.65)
+  {\textbf{Memoria della GPU}\\ \scriptsize\texttt{cudaMemGetInfo}, \texttt{cudaMalloc}};
+\node[passo,fill=blue!13] (p4) at (11.3,-4.45)
+  {\textbf{Memoria page-locked}\\ \scriptsize\texttt{cudaMallocHost}, due stream, due eventi};
+\node[passo,fill=blue!13] (p5) at (6.2,-4.45)
+  {\textbf{Copia sulla GPU}\\ \scriptsize CSR, \texttt{rows}, rank a $1/N$};
+\node[passo,fill=blue!13] (p6) at (1.1,-4.45)
+  {\textbf{Dimensione delle griglie}\\ \scriptsize blocchi residenti $\times$ SM};
+\draw[freccia] (p1.east) -- (p2.west);
+\draw[freccia] (p2.east) -- (p3.west);
+\draw[freccia] (p3.south) -- (p4.north);
+\draw[freccia] (p4.west) -- (p5.east);
+\draw[freccia] (p5.west) -- (p6.east);
+\end{tikzpicture}
+\caption{Le fasi della versione ibrida, dalla conversione del grafo ai
+risultati, e sotto, in dettaglio, la preparazione che precede il cronometro:
+solo il ciclo delle iterazioni è cronometrato. Nella preparazione, sull'host
+si sceglie quali righe vanno alla CPU e si raggruppano le altre per classe;
+poi si controlla e si alloca la memoria, si copiano sulla GPU i tre array del
+CSR, l'array \texttt{rows} delle righe raggruppate per classe e i rank
+iniziali, e si dimensionano le griglie dei kernel (ciascuna con al più tanti
+blocchi quanti ne possono risiedere contemporaneamente in un SM, moltiplicati
+per il numero di SM). In verde il lavoro del solo host, in blu quello che
+coinvolge la GPU.}
+\label{fig:panoramica}
+\end{figure}
+
+\paragraph{Il grafo sulla GPU.}
+I tre array del CSR e i vettori \texttt{cur}, \texttt{nxt} e
+\texttt{contrib} sono allocati in memoria globale con \texttt{cudaMalloc}. Il
+grafo viene copiato una volta sola, prima che il cronometro parta, e i rank
+tornano all'host una volta sola, dopo che si è fermato
+(Sezione~\ref{sec:misura}); fra un'iterazione e l'altra i due vettori dei rank
+si alternano scambiando i puntatori passati ai kernel, come nella versione per
+CPU. Prima di allocare, il programma chiede al runtime la memoria libera
+(\texttt{cudaMemGetInfo}) e la confronta con quella che servirà (se non basta
+si ferma dicendo quanta ne serve).
+
+\paragraph{Il primo ciclo e le riduzioni.}
+Il calcolo dei contributi diventa \texttt{contrib\_kernel}. Come tutti i kernel di
+\texttt{pagerank\_cuda.cu}, usa un ciclo \emph{grid-stride}. La dangling mass
+si calcola con una riduzione, come nella versione OpenMP: ogni thread somma la sua parte in un registro, i 32
+thread di un warp combinano le loro con \texttt{\_\_shfl\_down\_sync}, gli 8
+warp di un blocco attraverso la shared memory, dopo una barriera
+\texttt{\_\_syncthreads}, e infine ogni blocco aggiunge il suo totale a una
+variabile in memoria globale con un solo \texttt{atomicAdd}: uno per blocco e
+non per thread, perché migliaia di aggiornamenti sullo stesso indirizzo
+verrebbero serializzati.
+
+
+\paragraph{Il secondo ciclo: tre kernel per tre classi.}
+Il rank nuovo di un nodo richiede la somma dei contributi dei suoi
+predecessori, cioè degli elementi della sua riga, e la scelta è quanti thread
+dedicare a ciascuna riga. Un thread per riga, la traduzione diretta
+del ciclo OpenMP, va bene finché le righe sono corte e di lunghezza simile: i
+32 thread di un warp procedono al passo del più lento, e una riga lunga
+trattiene tutto il suo warp; affidata a un solo thread, una riga di centinaia
+di migliaia di predecessori allungherebbe l'intero kernel. Le righe sono
+perciò divise in tre classi, ciascuna con il suo kernel:
+\begin{itemize}\itemsep2pt
+  \item fino a $T$ predecessori, \texttt{accumulate\_thread\_rows}: un
+    thread per riga;
+  \item fino a $W$, \texttt{accumulate\_warp\_rows}: un warp per riga, in
+    cui il thread $k$ legge gli elementi $k$, $k+32$, $k+64$, \dots{} della
+    riga. I 32 thread leggono così insieme 32 elementi consecutivi di
+    \texttt{col\_idx}, con accesso coalescente. Le 32 somme parziali si
+    sommano poi dentro il warp con \texttt{\_\_shfl\_down\_sync};
+  \item oltre $W$, \texttt{accumulate\_block\_rows}: un blocco di 256
+    thread per riga, con lo stesso schema; le 256 somme parziali si sommano
+    prima dentro ogni warp con \texttt{\_\_shfl\_down\_sync}, poi fra gli 8
+    warp attraverso la shared memory.
+\end{itemize}
+Le soglie si scelgono a tempo di esecuzione con l'opzione
+\texttt{-b T,W}, e valgono 16 e 256 di default (Tabella~\ref{tab:bins}).
+Una $T$ oltre la riga più lunga dà a ogni riga un thread.
+Prima del ciclo le righe vengono raggruppate per classe in un
+array \texttt{rows}, e ciascun kernel ne riceve la sua porzione. I nodi
+conservano però la loro numerazione: rinumerarli per classe disperderebbe i
+predecessori che l'ordine originale tiene vicini, cioè la località che la
+Sezione~\ref{sec:scalabilita} ha mostrato decisiva. I kernel sono accodati
+sullo stesso stream, quindi vengono eseguiti uno dopo l'altro e leggono
+\texttt{contrib} quando \texttt{contrib\_kernel} è terminato.
 
 \paragraph{Perché una granularità variabile.}
 La distribuzione delle lunghezze di riga, misurata da \texttt{csr\_info.c},
 è riportata in Tabella~\ref{tab:bins}, e le sue due metà dicono cose
-opposte. Nei grafi utilizzati, \texttt{wiki-Vote} a parte, fra il 31 e
-l'88\,\% delle righe contiene al più 4 elementi, ma quelle righe valgono
-appena il 3,5--29\,\% degli archi; le righe oltre i 32 elementi sono al più il
-18\,\% e ne raccolgono dal 40 al 68\,\%, con singole righe che arrivano a
-centinaia di migliaia di predecessori. Fa eccezione \texttt{cit-Patents}, che
-non ha hub: due terzi dei suoi archi stanno in righe da 5 a 32 elementi, e
-quelle più lunghe ne raccolgono appena il 9\,\%.
-Queste considerazioni vanno a giustificare la scelta:
-le righe vengono raggruppate per lunghezza, così che un warp o un blocco 
-riceva righe di dimensione simile e nessun thread resti inattivo ad aspettare 
-gli altri.
+opposte. La tabella la divide nelle tre classi in cui la GPU mette le
+righe con le soglie di default: fino a 16 predecessori, da 17 a 256 e oltre
+256. Nei grafi utilizzati fra il 67 e il 96\,\% delle righe ha al più 16
+elementi, ma quelle righe valgono, \texttt{cit-Patents} a parte, dal 5 al
+44\,\% degli archi; le righe oltre i 256 elementi sono al più lo 0,6\,\% e ne
+raccolgono fino al 46\,\%, con singole righe che arrivano a centinaia di
+migliaia di predecessori. Le righe da 17 a 256 elementi portano invece il
+grosso del lavoro sui grafi sociali, l'81\,\% degli archi su
+\texttt{soc-Pokec}. Fa eccezione \texttt{cit-Patents}, che non ha hub: tre
+quarti dei suoi archi stanno in righe fino a 16 elementi, e quelle oltre 256
+ne raccolgono appena lo 0,1\,\%.
+Questi numeri giustificano la scelta descritta sopra. Con un thread per riga,
+una sola riga di centinaia di migliaia di predecessori fermerebbe il suo warp
+per altrettanti passi. Con le classi, nessun thread aspetta gli altri del suo
+warp per più di 16 passi, e ogni warp o blocco lavora con almeno metà dei suoi
+thread.
+
+\stacco
+La Figura~\ref{fig:predecessori} mostra la stessa distribuzione nodo per
+nodo. Il numero di nodi cala di ordini di grandezza al crescere dei
+predecessori, ma la coda arriva a migliaia o a decine di migliaia di
+predecessori, oltre i 100\,000 su \texttt{wiki-topcats}; solo
+\texttt{cit-Patents} si ferma sotto i mille. Nella coda molti valori hanno un
+solo nodo, e i loro punti si allineano sull'1: sono gli hub. Su
+\texttt{soc-Pokec} la curva si
+piega presto verso il basso, e pochissimi nodi superano il migliaio di
+predecessori.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figure/predecessori.pdf}
+\caption{Nodi per numero di predecessori, cioè per lunghezza della loro riga
+nel CSR trasposto, su assi logaritmici: un punto per ogni numero di
+predecessori presente nel grafo. Il colore è la
+classe in cui la GPU mette quelle righe con le soglie di default, 16 e 256,
+segnate dalle linee punteggiate (Tabella~\ref{tab:bins}). I nodi senza
+predecessori non compaiono. Figura generata da
+\texttt{tools/plot\_degrees.py}.}
+\label{fig:predecessori}
+\end{figure}
 
 \begin{table}[h]
 \centering
-\caption{Distribuzione delle lunghezze di riga (predecessori per nodo): 
-quota percentuale di nodi e di archi per classe.}
+\caption{Distribuzione delle lunghezze di riga (predecessori per nodo) nelle
+tre classi della GPU, con le soglie di default: quota percentuale di nodi e di
+archi per classe. Le righe vuote stanno nella classe dei thread. Valori
+misurati da \texttt{csr\_info.c}.}
 \label{tab:bins}
-\begin{tabular}{@{}lrrrrrrrr@{}}
+\begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
-& \textbf{0} & \multicolumn{2}{c}{\textbf{1--4}} &
-\multicolumn{2}{c}{\textbf{5--32}} & \multicolumn{2}{c}{\textbf{>32}} & \\
-\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
-\textbf{Grafo} & nodi & nodi & archi & nodi & archi & nodi & archi &
-\textbf{max} \\
+& \multicolumn{2}{c}{\textbf{thread (0--16)}} &
+\multicolumn{2}{c}{\textbf{warp (17--256)}} &
+\multicolumn{2}{c}{\textbf{blocco (>256)}} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+\textbf{Grafo} & nodi & archi & nodi & archi & nodi & archi & \textbf{max} \\
 \midrule
-wiki-Vote        & 66,5 & 3,0  & 0,5  & 12,9 & 14,8 & 17,6 & 84,8 & 457 \\
-web-NotreDame    & 0,0  & 87,6 & 29,2 & 10,1 & 24,0 & 2,3  & 46,8 & 10\,721 \\
-web-Stanford     & 7,2  & 70,3 & 17,8 & 20,6 & 26,8 & 1,9  & 55,4 & 38\,606 \\
-web-Google       & 18,4 & 56,7 & 16,4 & 22,3 & 43,2 & 2,6  & 40,4 & 6\,326 \\
-web-BerkStan     & 9,9  & 64,2 & 11,5 & 22,6 & 21,5 & 3,3  & 67,0 & 84\,208 \\
-cit-Patents      & 13,7 & 56,5 & 25,9 & 29,0 & 65,0 & 0,8  & 9,1  & 779 \\
-wiki-topcats     & 0,0  & 58,4 & 7,4  & 35,0 & 24,6 & 6,6  & 67,9 & 238\,040 \\
-soc-Pokec        & 6,9  & 31,4 & 3,5  & 43,7 & 33,4 & 18,0 & 63,1 & 13\,733 \\
-soc-LiveJournal1 & 7,4  & 45,2 & 6,2  & 36,7 & 33,8 & 10,7 & 60,0 & 13\,906 \\
+wiki-Vote        & 76,4 & 5,2  & 23,5 & 91,5 & 0,2 & 3,3  & 457 \\
+web-NotreDame    & 95,8 & 43,1 & 4,2  & 45,2 & 0,1 & 11,7 & 10\,721 \\
+web-Stanford     & 94,7 & 35,0 & 5,1  & 24,3 & 0,2 & 40,6 & 38\,606 \\
+web-Google       & 93,1 & 43,5 & 6,8  & 43,8 & 0,1 & 12,7 & 6\,326 \\
+web-BerkStan     & 93,3 & 25,9 & 6,4  & 28,4 & 0,3 & 45,7 & 84\,208 \\
+cit-Patents      & 95,8 & 74,0 & 4,2  & 25,9 & 0,0 & 0,1  & 779 \\
+wiki-topcats     & 86,7 & 22,5 & 12,7 & 37,9 & 0,6 & 39,6 & 238\,040 \\
+soc-Pokec        & 66,7 & 17,7 & 33,3 & 80,8 & 0,1 & 1,5  & 13\,733 \\
+soc-LiveJournal1 & 78,8 & 22,8 & 20,9 & 66,8 & 0,3 & 10,4 & 13\,906 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\paragraph{La quota della CPU.}
+Si prevede di dare alla CPU i nodi di grado più alto,
+gli hub, pochi e lunghi, adatti alla bassa latenza dei suoi core, e alla GPU le
+righe corte, numerose e simili fra loro, adatte al suo throughput. La
+ripartizione fra CPU e GPU si chiede con l'opzione \texttt{-s}, la
+\emph{quota}: la frazione degli archi, fra 0 e 1, da assegnare alla CPU; con
+\texttt{-s 0.25} si chiede per la CPU un quarto degli archi. La quota 1 non
+equivale alla versione OpenMP: anche con tutte le righe alla CPU,
+\texttt{contrib\_kernel} resta sulla GPU, e a ogni iterazione \texttt{contrib}
+passa all'host e i rank tornano alla GPU.
+\texttt{host\_threshold} parte dalle righe più lunghe e scende una lunghezza
+alla volta, prendendo ogni volta tutte le righe di quella lunghezza, finché gli
+archi raccolti non supererebbero la quota chiesta; l'ultima lunghezza presa è
+la lunghezza minima, e alla CPU andranno tutte le righe con almeno quel numero
+di predecessori. Una soglia fissa sul numero di predecessori non sarebbe
+portabile fra i grafi: con \texttt{-s 0.25} la lunghezza minima è 18 su
+\texttt{cit-Patents} e 2\,676 su \texttt{web-BerkStan}. Prendendo lunghezze
+intere, la quota ottenuta può
+restare sotto quella chiesta, e di molto dove una sola lunghezza raccoglie
+molti archi: su \texttt{web-NotreDame}, \texttt{-s 0.25} dà alla CPU il
+14,6\,\% degli archi. Le righe della CPU sono l'ultima classe dell'array
+\texttt{rows}.
+
+\paragraph{Un'iterazione, fra due stream.}
+Per calcolare le sue righe la CPU ha bisogno di \texttt{contrib} per
+intero, perché i predecessori di una riga possono essere ovunque nel grafo. A
+ogni iterazione tutto il vettore deve quindi passare dalla GPU all'host, 
+qualunque sia la quota; la CPU, a sua volta, deve
+rimandare i rank delle sue righe. Perché questi trasferimenti non fermino la
+GPU, l'iterazione usa due stream e due eventi,
+nell'ordine della Figura~\ref{fig:iterazione}:
+\begin{enumerate}\itemsep2pt
+  \item sullo stream principale \texttt{contrib\_kernel} calcola i
+    contributi e la dangling mass;
+  \item un secondo stream, che con \texttt{cudaStreamWaitEvent} attende
+    il solo \texttt{contrib\_kernel}, copia \texttt{contrib} e la dangling mass
+    sull'host con \texttt{cudaMemcpyAsync}, mentre lo stream principale
+    prosegue con i kernel di accumulo delle righe della GPU: la copia la esegue
+    il \emph{copy engine}, e si sovrappone al calcolo;
+  \item l'host attende la fine della copia
+    (\texttt{cudaEventSynchronize}) e i thread OpenMP calcolano le righe della
+    CPU, con \texttt{schedule(dynamic,~16)}, perché anche queste hanno
+    lunghezze molto diverse, e \texttt{reduction(+~:~error)};
+  \item i nuovi rank della CPU, scritti uno dopo l'altro nell'ordine di
+    \texttt{rows}, tornano alla GPU con una \texttt{cudaMemcpyAsync},
+    accodata sullo stream principale dopo i kernel di accumulo, e il kernel
+    \texttt{scatter\_host\_ranks} li riporta al loro posto in \texttt{nxt},
+    prima del \texttt{contrib\_kernel} dell'iterazione successiva;
+  \item l'ultima copia dello stream riporta sull'host l'errore della
+    GPU, e l'host attende la fine dell'iterazione con
+    \texttt{cudaStreamSynchronize}.
+\end{enumerate}
+Le copie asincrone richiedono memoria dell'host \emph{page-locked},
+l'unica che la GPU può leggere e scrivere da sé mentre esegue i kernel: il
+buffer che riceve \texttt{contrib} e quello dei rank della CPU sono allocati
+con \texttt{cudaMallocHost}. Gli eventi servono solo a
+sincronizzare, e sono creati con \texttt{cudaEventDisableTiming}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  >=latex,
+  box/.style={draw,semithick,rounded corners=3pt,align=center,
+              text width=4.3cm,minimum height=1.05cm,font=\footnotesize},
+  kern/.style={box,fill=blue!13},
+  copia/.style={box,fill=orange!20},
+  host/.style={box,fill=green!15},
+  attesa/.style={box,draw=gray,densely dashed,text=gray!50!black},
+  testa/.style={draw,semithick,fill=gray!12,align=center,text width=4.3cm,
+                minimum height=0.6cm,font=\footnotesize\bfseries},
+  freccia/.style={->,semithick,gray!60!black},
+  evento/.style={font=\tiny\ttfamily,text=gray!40!black}
+]
+\node[testa] at (0,1.05)    {Host (CPU)};
+\node[testa] at (5.1,1.05)  {Stream di copia};
+\node[testa] at (10.2,1.05) {Stream principale};
+% riga 0
+\node[host] (h1) at (0,0)
+  {\textbf{Accoda il lavoro}\\ \scriptsize kernel, evento, copia};
+\node[kern] (m1) at (10.2,0)
+  {\texttt{contrib\_kernel}\\ \scriptsize contributi e dangling mass};
+% riga 1
+\node[attesa] (h2) at (0,-1.35)
+  {\textbf{Attende la copia}\\ \scriptsize\texttt{cudaEventSynchronize}};
+\node[copia] (c1) at (5.1,-1.35)
+  {\textbf{Copia verso l'host}\\ \scriptsize\texttt{contrib} e dangling mass};
+% righe 1-3: l'accumulo della GPU dura quanto la copia e il lavoro della CPU
+\node[kern,minimum height=3.75cm] (m2) at (10.2,-2.7)
+  {\textbf{Accumulo della GPU}\\ \scriptsize thread, warp, blocco};
+% riga 2
+\node[host] (h3) at (0,-2.7)
+  {\textbf{Accumulo della CPU}\\ \scriptsize OpenMP, righe lunghe};
+% riga 3
+\node[host] (h4) at (0,-4.05)
+  {\textbf{Accoda il ritorno}\\ \scriptsize copia dei rank, scatter};
+% righe 4-6
+\node[attesa,minimum height=3.75cm] (h5) at (0,-6.75)
+  {\textbf{Attende la GPU}\\ \scriptsize\texttt{cudaStreamSynchronize}};
+\node[copia] (m3) at (10.2,-5.4)
+  {\textbf{Copia verso la GPU}\\ \scriptsize rank delle righe della CPU};
+\node[kern] (m4) at (10.2,-6.75)
+  {\texttt{scatter\_host\_ranks}\\ \scriptsize rank della CPU in \texttt{nxt}};
+\node[copia] (m5) at (10.2,-8.1)
+  {\textbf{Copia verso l'host}\\ \scriptsize errore della GPU};
+% riga 7
+\node[host] (h6) at (0,-9.45)
+  {\textbf{Errore GPU + CPU}\\ \scriptsize scambia \texttt{cur} e \texttt{nxt}, convergenza?};
+% host
+\draw[freccia] (h1.south) -- (h2.north);
+\draw[freccia] (h2.south) -- (h3.north);
+\draw[freccia] (h3.south) -- (h4.north);
+\draw[freccia] (h4.south) -- (h5.north);
+\draw[freccia] (h5.south) -- (h6.north);
+% stream principale
+\draw[freccia] (m1.south) -- (m2.north);
+\draw[freccia] (m2.south) -- (m3.north);
+\draw[freccia] (m3.south) -- (m4.north);
+\draw[freccia] (m4.south) -- (m5.north);
+% fra le colonne
+\draw[freccia] (h1.east) -- (m1.west);
+\draw[freccia] (7.925,-0.3) -| (c1.north);
+\node[evento,anchor=west] at (5.2,-0.57) {contrib\_done};
+\draw[freccia] (c1.south) |- (h3.east);
+\node[evento,anchor=west] at (5.2,-2.3) {contrib\_copied};
+\draw[freccia] (h4.east) -- (7.65,-4.05) |- (m3.west);
+\draw[freccia] (m5.west) -- (h5.east |- m5.west);
+\node[anchor=west,font=\scriptsize] at (-2.275,-10.35)
+  {$\circlearrowleft$ se l'errore supera la tolleranza, iterazione successiva};
+\end{tikzpicture}
+\caption{Un'iterazione della versione ibrida in dettaglio, con il tempo verso
+il basso: una colonna per l'host e una per ciascuno stream.
+In blu i kernel della GPU, in arancio le copie, in verde il lavoro
+dell'host, tratteggiate le attese. Con \texttt{-s 0} sparisce lo stream di
+copia; nello stream principale mancano ``Copia verso la GPU'' e lo scatter dei
+rank, e l'host attende solo la GPU alla fine dell'iterazione, per leggerne
+l'errore e decidere se continuare.}
+\label{fig:iterazione}
+\end{figure}
+
+\paragraph{L'errore di convergenza.}
+I kernel di accumulo sommano anche la variazione $|\mathrm{PR}'[v]-\mathrm{PR}[v]|$
+delle loro righe, con lo stesso meccanismo usato nel primo ciclo per la
+riduzione della dangling mass; l'host somma a questo totale la variazione
+delle righe della CPU. Dangling mass ed errore della GPU stanno
+in un array di due scalari in memoria globale, azzerato a inizio iterazione e
+riportato sull'host alla fine con una sola copia: con la GPU sola, questi 16
+byte sono l'unico trasferimento di ogni iterazione.
+
+\paragraph{Nessuna ipotesi sul dispositivo.}
+I blocchi hanno 256 thread, un multiplo della dimensione del warp.
+Il numero di blocchi di ogni kernel è quello che la GPU tiene residenti tutti
+insieme: i blocchi per multiprocessore, che il runtime calcola con
+\texttt{cudaOccupancyMaxActiveBlocksPerMultiprocessor}, per il numero di
+multiprocessori, letto con \texttt{cudaGetDeviceProperties}; meno, se il
+lavoro ne richiede meno. Con i cicli grid-stride questi stessi blocchi trattano
+più nodi al crescere del grafo, senza che il loro numero aumenti. La prima
+chiamata CUDA del programma,
+che avvia il driver sulla GPU e richiede un tempo non trascurabile, è quella
+che descrive il dispositivo, e \texttt{main.c} la esegue prima del cronometro.
+Il \texttt{Makefile}, infine, compila per l'architettura della GPU presente
+(\texttt{-arch=native}), ma è sovrascrivibile.
 
 \subsection{Strategia di verifica}
 \label{sec:verifica}
@@ -919,9 +1251,20 @@ Opzioni           & \texttt{-std=c11 -Wall -Wextra -O2} \\
 \end{center}
 
 \stacco
-La versione OpenMP è stata misurata sulla Macchina 1 e sulla
-Macchina 3. La seconda ha il triplo
-dei core fisici e una L3 di 21~MiB anziché 8.
+La versione OpenMP è stata misurata sulle Macchine 1 e 3: la Macchina 3 ha
+il triplo dei core fisici e una L3 di 21~MiB anziché 8. Non è stata misurata
+sulla Macchina 2, la cui CPU ha la stessa struttura di quella della Macchina 1
+(4 core fisici, 8 thread logici, cache delle stesse dimensioni): non avrebbe
+aggiunto un caso nuovo allo studio della scalabilità, che dipende dal numero
+di core fisici.
+
+\stacco
+La versione ibrida è stata misurata su tutte e tre le macchine, una
+volta per ogni GPU: cinque configurazioni in tutto. Le GPU non sono
+collegate tutte allo stesso modo: lavorano su PCIe 3.0 x16 la GTX 1050 Ti della
+Macchina 1 e la prima RTX 2080 Ti della Macchina 3, su x8 la seconda RTX 2080
+Ti della Macchina 3 ed entrambe le GPU della Macchina 2; la differenza conta
+quando la CPU ha una parte del lavoro (Sezione~\ref{sec:ibrida-risultati}).
 
 \subsection{Istanze di prova}
 Sono stati usati nove grafi reali della collezione
@@ -975,14 +1318,19 @@ particolarità: \texttt{cit-Patents} non ha hub (nessun brevetto è citato più
 di 779 volte) e ha le righe più corte, 4,4 predecessori in media;
 \texttt{wiki-topcats} ha l'hub più estremo, con 238\,040 predecessori, e
 nessun nodo dangling; \texttt{soc-Pokec} e \texttt{soc-LiveJournal1} hanno
-la quota più alta di righe lunghe, oltre 32 predecessori per il 18,0 e il
-10,7\,\% dei nodi (Tabella~\ref{tab:bins}).
+la quota più alta di righe lunghe, oltre 16 predecessori per il 33,4\,\% e il
+21,2\,\% dei nodi (Tabella~\ref{tab:bins}).
 
 \subsection{Correttezza}
-La Tabella~\ref{tab:correttezza} raccoglie i confronti fra le tre
-implementazioni. Lo scarto è la maggiore differenza in valore assoluto fra i
+La Tabella~\ref{tab:correttezza} raccoglie i confronti fra i tre calcoli della
+Sezione~\ref{sec:verifica}: il riferimento denso, NetworkX e il programma C.
+Lo scarto è la maggiore differenza in valore assoluto fra i
 rank corrispondenti, cercata su tutti gli $N$ nodi. I confronti usano la build
-sequenziale; ripetuti con quella OpenMP danno lo stesso scarto.
+sequenziale; ripetuti con quella OpenMP danno lo stesso scarto. Lo
+stesso vale per la build ibrida; sulle quattro istanze maggiori, dove NetworkX
+non è praticabile, la versione ibrida coincide con quella OpenMP entro
+$5\cdot10^{-17}$, nello stesso numero di iterazioni, in esecuzioni di verifica
+apposite, distinte da quelle cronometrate, alle quote 0, 0,4 e 1.
 
 \begin{table}[h]
 \centering
@@ -1005,50 +1353,42 @@ Lo scarto contro NetworkX riportato in tabella è quello di
 resta sotto $6{,}5\cdot10^{-11}$. In ogni caso è ben al di sotto della soglia di
 $10^{-8}$ usata dallo strumento di verifica.
 \stacco
-In tutte le 405 esecuzioni registrate nei \texttt{bench.csv} delle Macchine 1
-e 3 la somma dei
+In tutte le 2\,295 esecuzioni registrate nei \texttt{bench.csv} delle tre macchine, ibride comprese, la somma dei
 rank si discosta da 1 per non più di $1{,}4\cdot10^{-11}$ in doppia precisione
 e $2{,}7\cdot10^{-8}$ in singola: la massa dei nodi dangling non si disperde.
+Tutte giungono a convergenza, e ogni grafo richiede lo stesso numero di
+iterazioni in ogni build, precisione e quota.
 
-\subsection{\texorpdfstring{\nuovo{Misura dei tempi}}{Misura dei tempi}}
+\subsection{Misura dei tempi}
 \label{sec:misura}
-\nuovo{Il tempo riportato per ogni esecuzione è quello del solo ciclo delle
+Il tempo riportato per ogni esecuzione è quello del solo ciclo delle
 iterazioni: l'orologio si legge appena prima della prima iterazione e appena
-dopo l'ultima, con \texttt{clock\_gettime(CLOCK\_MONOTONIC)} (la funzione
-\texttt{wall\_seconds} nel codice). È tempo reale trascorso, non tempo di CPU:
-con OpenMP quest'ultimo sommerebbe il lavoro di tutti i thread e non
-mostrerebbe alcuno speed-up. Restano fuori dalla misura le operazioni fatte
+dopo l'ultima, chiamando \texttt{clock\_gettime} con \texttt{CLOCK\_MONOTONIC}
+(la funzione \texttt{wall\_seconds} nel codice). Si ottiene così il tempo reale
+trascorso, come lo misurerebbe un cronometro, e non il tempo di CPU, che con
+più thread in parallelo sarebbe la somma del tempo di lavoro di ciascuno.
+Restano fuori dalla misura le operazioni fatte
 una volta sola: la lettura del file \texttt{.csr} e, nella versione ibrida, il
-trasferimento del grafo verso la GPU e quello dei rank finali verso l'host.}
+trasferimento del grafo verso la GPU e quello dei rank finali verso l'host.
 
 \stacco
-\nuovo{Si è preso in considerazione di misurare i tempi con gli
-eventi (\texttt{cudaEventRecord}, \texttt{cudaEventElapsedTime}) e con il
-profiler (\texttt{nvprof}, \texttt{nsys}), ma per i tempi complessivi si è
-preferito un orologio dell'host, per due ragioni: la prima è che i tempi delle
-tre versioni vanno confrontati fra loro, quindi devono venire dallo stesso
-orologio: la build sequenziale non ha né CUDA né OpenMP, perciò non dispone
-né degli eventi né di \texttt{omp\_get\_wtime}, mentre \texttt{clock\_gettime}
-è disponibile ovunque. La seconda è che gli eventi misurano ciò che accade
-negli stream della GPU, mentre nella versione ibrida una parte del lavoro la
-svolge la CPU (Sezione~\ref{sec:cuda}): solo un orologio dell'host vede le due
-parti insieme.}
+Per i tempi complessivi si è preferito un orologio dell'host agli eventi
+CUDA e al profiler,
+per due ragioni. I tempi delle quattro versioni vanno confrontati fra loro, e
+devono quindi venire dallo stesso orologio, ma la build sequenziale non ha né
+CUDA né OpenMP, mentre \texttt{clock\_gettime} è disponibile ovunque. Inoltre
+gli eventi misurano solo ciò che accade negli stream della GPU, mentre nella
+versione ibrida una parte del lavoro la svolge la CPU.
 
 \stacco
-\nuovo{La misura resta corretta anche se i kernel vengono lanciati in modo
-asincrono, perché ogni iterazione si chiude con \texttt{cudaStreamSynchronize}:
-quando l'orologio viene letto per l'ultima volta, la GPU ha davvero finito. Lo
-conferma il confronto con il profiler: con tutto il lavoro sulla GPU, il tempo
-così misurato coincide entro 0,06~ms con l'intervallo che \texttt{nsys}
-registra fra la prima e l'ultima operazione della GPU.}
+Con la GPU sola (\texttt{-s 0}), il tempo misurato da
+\texttt{wall\_seconds} differisce di al più 0,06~ms dall'intervallo che
+\texttt{nsys} registra fra la prima e l'ultima operazione della GPU.
 
 \stacco
-\nuovo{Il profiler resta lo strumento per il dettaglio: \texttt{nsys}
+Il profiler resta lo strumento per il dettaglio: \texttt{nsys}
 registra inizio e fine di ogni kernel e di ogni trasferimento, ed è da lì che
-vengono le durate delle singole fasi della versione ibrida. Gli eventi CUDA
-compaiono nel codice solo per sincronizzare i due stream di quella versione, e
-sono creati con \texttt{cudaEventDisableTiming}, cioè senza registrare il
-tempo.}
+vengono le durate delle singole fasi della versione ibrida.
 
 \subsection{Scalabilità della versione OpenMP}
 \label{sec:scalabilita}
@@ -1203,8 +1543,8 @@ in più. Quel $28\,\%$ è però un tetto di miglioramento ideale:
 lo si raggiungerebbe solo se gli archi
 fossero gratis, mentre il divario osservato è il $74\,\%$.
 Non lo spiega neppure la concentrazione nelle righe lunghe:
-\texttt{soc-LiveJournal1} ha il $60\,\%$ degli
-archi oltre i 32 predecessori, quasi quanto il $67\,\%$ di
+\texttt{soc-LiveJournal1} ha il $77\,\%$ degli
+archi oltre i 16 predecessori, più del $74\,\%$ di
 \texttt{web-BerkStan} (Tabella~\ref{tab:bins}), eppure per arco costa
 $1{,}26$~ns, poco più di \texttt{web-Google}.
 
@@ -1218,10 +1558,9 @@ stessa riga è $1$, una conseguenza di come sono stati raccolti e salvati i dati
 una sola linea di cache da 64 byte porta con sé 8 contributi consecutivi,
 e ne bastano poche per servire un'intera riga: in media una linea ogni 16
 archi, $0{,}06$ linee per arco (Tabella~\ref{tab:localita}),
-cosicché questa raccolta di
-valori da posizioni sparse --- il \emph{gather} --- si riduce a una lettura
-quasi sequenziale.
-In \texttt{web-Google} gli indici sono sparsi su tutto l'array, con un salto mediano di quasi $17\,000$ posizioni, e
+cosicché questa raccolta di valori da posizioni sparse si riduce a una 
+lettura quasi sequenziale. In \texttt{web-Google} gli indici sono sparsi su
+tutto l'array, con un salto mediano di quasi $17\,000$ posizioni, e
 quasi ogni arco pretende una linea di cache nuova ($0{,}99$ linee per
 arco)\footnote{Linee di cache distinte contate da \texttt{tools/locality\_stats.py};
 5054775 linee / 5105039 archi = 0,99 linee per arco; 5054775 linee
@@ -1249,7 +1588,7 @@ divide su meno archi.
 \stacco
 La cache manca del tutto alle quattro istanze maggiori, i cui
 \texttt{contrib}, da $12{,}5$ a $37$~MiB, nella L3 da 8~MiB non entrano: la
-gran parte delle linee che il gather richiede va cercata in memoria, e il
+gran parte delle linee che la lettura sparsa richiede va cercata in memoria, e il
 costo per arco dipende sia dalla località sia da quanta parte di
 \texttt{contrib} la cache riesce ancora a trattenere.
 \texttt{wiki-topcats}, la più locale delle quattro ($0{,}42$ linee per arco),
@@ -1277,16 +1616,16 @@ e rende proprio dove la Macchina 1 aspetta la RAM.
 \centering
 \caption{Località della lettura sparsa su \texttt{contrib}. Il salto è la
 mediana di \texttt{col\_idx[j+1] - col\_idx[j]} all'interno di una riga; le
-linee di cache distinte sono contate su blocchi di 256 righe, che è l'unità di
-schedulazione del ciclo, e divise per il numero di archi danno le linee per
-arco; il gather per iterazione è il volume che ne risulta.
+linee di cache distinte sono contate su chunk di 256 righe, l'unità con cui
+il ciclo distribuisce le righe ai thread, e divise per il numero di archi danno le linee per
+arco; le letture per iterazione sono il volume che ne risulta.
 Misure prodotte da \texttt{tools/locality\_stats.py} dai file \texttt{.csr};
 i tempi per arco vengono dai 4 thread della Tabella~\ref{tab:scaling} per
 la Macchina 1 (M1) e della Tabella~\ref{tab:scaling3} per la Macchina 3 (M3).}
 \label{tab:localita}
 \begin{tabular}{@{}lrrrrrr@{}}
 \toprule
-\textbf{Grafo} & \textbf{salto} & \textbf{linee} & \textbf{gather} &
+\textbf{Grafo} & \textbf{salto} & \textbf{linee} & \textbf{letture} &
 \textbf{\texttt{contrib}} & \multicolumn{2}{c}{\textbf{ns per arco}} \\
 \cmidrule(l){6-7}
  & \textbf{mediano} & \textbf{per arco} & \textbf{per iter.} & &
@@ -1332,7 +1671,7 @@ supera: \texttt{web-Google},
 sta in cache o viene letto quasi in sequenza, il guadagno scende all'11\,\%
 su \texttt{web-BerkStan} e sparisce sugli altri due, dove la differenza ($+3\,\%$ su \texttt{web-NotreDame},
 $-4\,\%$ su \texttt{web-Stanford}) può essere attribuita al rumore di misura.
-Il guadagno si concentra dunque dove il gather va in memoria, ed è coerente
+Il guadagno si concentra dunque dove la lettura sparsa va in memoria, ed è coerente
 con il dimezzamento dei byte trasferiti per ogni rank: un'ulteriore conferma
 indiretta della natura memory-bound del calcolo.
 
@@ -1341,8 +1680,8 @@ Sulla Macchina 3, a 24 thread, il guadagno si allarga a sette grafi su
 otto, dal 18 al 31\,\%, e comprende \texttt{web-Stanford} e
 \texttt{web-BerkStan}, che sulla Macchina 1 guadagnavano poco o nulla.
 Resta nullo solo su \texttt{web-NotreDame}
-($-2\,\%$), il più piccolo degli otto grafi e quello con il gather per
-iterazione più leggero.
+($-2\,\%$), il più piccolo degli otto grafi e quello con 
+le letture per iterazione più leggere.
 
 Il limite della singola precisione si manifesta sulla soglia di
 convergenza: su \texttt{web-Google} l'errore $L_1$ non scende sotto
@@ -1352,9 +1691,252 @@ tolleranza utilizzata negli esperimenti ($10^{-6}$) entrambe convergono
 nello stesso numero di iterazioni.
 
 \subsection{Risultati della versione ibrida}
-\daFare{Sezione da scrivere: tempi della versione CUDA e ibrida, confronto
-con OpenMP, occupancy, effetto della granularità adattiva, effetto della
-sovrapposizione fra trasferimenti e calcolo.}
+\label{sec:ibrida-risultati}
+La versione ibrida è stata misurata sulle tre macchine e su ciascuna
+delle loro GPU, sugli stessi nove grafi, in doppia e in singola precisione,
+alle quote 0, 0,05, 0,1, 0,25, 0,5, 0,75 e 1. La parte della
+CPU usa tutti i thread logici: 8 sulle Macchine 1 e 2, 24 sulla Macchina 3.
+Come per OpenMP, ogni configurazione è stata eseguita tre volte e si riporta
+il minimo. Ogni esecuzione della versione ibrida è avvenuta sotto il profiler 
+\texttt{nsys}, che introduce un overhead di circa l'1\,\% del tempo e registra
+inizio e fine di ogni kernel e di ogni copia (i report di \texttt{nsys}
+letti tramite \texttt{tools/nsys\_phases.py}). Tutti i tempi di questa
+sezione sono della variante in doppia precisione, tranne quelli del
+paragrafo sulla singola precisione.
+
+\paragraph{La GPU da sola.}
+Con il lavoro tutto sulla GPU (Tabella~\ref{tab:gpu-sola}) la RTX 2080
+Ti è da 1,4 a 2,9 volte più veloce dei 24 thread della Macchina 3, e da 15 a
+27 volte più veloce della versione sequenziale. Sulla Macchina 1, invece,
+la GTX 1050 Ti e i 4 core della CPU si equivalgono: la GPU va da 0,68 volte
+(\texttt{web-Google}) a 1,9 volte (\texttt{web-BerkStan}) la versione OpenMP a
+8 thread. Il trasferimento iniziale del grafo, escluso dal tempo, non cambia
+il quadro: per \texttt{soc-LiveJournal1}, 392~MB, richiede da 37 a 63~ms
+secondo la macchina, contro 0,47~s di calcolo sulla RTX 2080 Ti.
+
+\begin{table}[h]
+\centering
+\caption{Tempi in secondi della GPU sola (quota 0) e, per confronto, della
+migliore configurazione OpenMP della stessa macchina (8 thread sulla Macchina
+1, 24 sulla Macchina 3). La RTX 2080 Ti è quella della Macchina 3 sul
+collegamento x16: con la GPU sola, sull'altra e su quella della Macchina 2 i
+tempi coincidono entro il 3\,\%. Sulla Macchina 2 la versione OpenMP non è
+stata misurata.}
+\label{tab:gpu-sola}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{\textbf{Macchina 1}} & \textbf{Macchina 2} &
+\multicolumn{2}{c}{\textbf{Macchina 3}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-4}\cmidrule(l){5-6}
+\textbf{Grafo} & \textbf{GTX 1050 Ti} & \textbf{OpenMP} & \textbf{GTX 1080 Ti} &
+\textbf{RTX 2080 Ti} & \textbf{OpenMP} \\
+\midrule
+web-NotreDame    & 0,032 & 0,049 & 0,010 & 0,010 & 0,014 \\
+web-Stanford     & 0,127 & 0,092 & 0,019 & 0,014 & 0,028 \\
+web-Google       & 0,534 & 0,361 & 0,113 & 0,041 & 0,099 \\
+web-BerkStan     & 0,101 & 0,192 & 0,027 & 0,028 & 0,083 \\
+cit-Patents      & 0,444 & 0,466 & 0,110 & 0,049 & 0,128 \\
+wiki-topcats     & 0,777 & 0,765 & 0,188 & 0,085 & 0,227 \\
+soc-Pokec        & 1,965 & 1,400 & 0,435 & 0,161 & 0,320 \\
+soc-LiveJournal1 & 3,922 & 4,229 & 1,023 & 0,466 & 1,178 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\stacco
+Anche sulla GPU il costo per arco dipende dalla località. Sulla GTX
+1050 Ti un arco di \texttt{web-Google} costa 1,69~ns e uno di
+\texttt{web-BerkStan} 0,21~ns, otto volte meno; sulla GTX 1080 Ti il rapporto è
+di 6,4, sulla RTX 2080 Ti di 2,2. Su tutte e tre le GPU la memoria globale si
+legge in settori da 32 byte: un arco che chiede un contributo lontano dagli altri ne impegna uno
+intero per 8 byte utili; sulla CPU, per gli stessi 8 byte, impegna una linea
+di cache da 64 byte.
+
+\paragraph{La singola precisione sulla GPU.}
+La variante \texttt{float} dimezza i byte dei tre vettori, ma sulla GPU
+non sempre conviene. Sulla RTX 2080 Ti riduce il tempo della GPU sola del
+27\,\% su \texttt{soc-LiveJournal1} e del 38\,\% su \texttt{cit-Patents}, ma lo
+aumenta del 22--31\,\% sui tre grafi dove la lettura di \texttt{contrib} è più
+leggera: \texttt{web-NotreDame} e \texttt{web-BerkStan}, i più locali, e
+\texttt{web-Stanford}, il cui \texttt{contrib}, di 2,2~MiB, è il più piccolo
+fra gli otto grafi misurati. Sulla GTX 1050 Ti rallentano solo
+\texttt{web-NotreDame} e \texttt{web-BerkStan}, dell'11 e del 13\,\%; sulla
+GTX 1080 Ti nessun grafo. Secondo \texttt{nsys} il rallentamento è tutto nei
+kernel di accumulo (\texttt{accumulate\_thread\_rows},
+\texttt{accumulate\_warp\_rows} e \texttt{accumulate\_block\_rows}),
+mentre \texttt{contrib\_kernel} in \texttt{float} dura meno
+della metà. La spiegazione più probabile sta negli accumulatori, che restano in
+\texttt{double} (Sezione~\ref{sec:precisione}): nella variante \texttt{float}
+ogni contributo letto va convertito in \texttt{double} prima di essere
+sommato, un'istruzione in più per arco, eseguita dalle unità a 64 bit, che
+sulle GPU di fascia consumer sono una piccola frazione di quelle a 32. I due
+effetti del \texttt{float} vanno in direzioni opposte. Su \texttt{cit-Patents}
+e \texttt{soc-LiveJournal1} i contributi sono sparsi su tutto il vettore, e la
+GPU passa il tempo ad aspettarli dalla memoria: leggerne la metà dei byte
+accorcia l'attesa, e il \texttt{float} è più veloce. Su
+\texttt{web-NotreDame}, \texttt{web-BerkStan} e \texttt{web-Stanford} i
+contributi sono vicini fra loro o stanno in cache e arrivano in fretta: la GPU
+non aspetta la memoria, e la conversione in più per ogni arco allunga il
+tempo.
+
+\paragraph{Dividere il lavoro.}
+La Tabella~\ref{tab:quote} riporta per ogni configurazione la quota più
+veloce, e la Figura~\ref{fig:quote} l'andamento completo per quattro di esse. Il
+quadro si divide in due. Sulla Macchina 1 dividere il lavoro conviene su
+tutti i grafi: la quota migliore è fra 0,5 e 0,75 su sette grafi su otto, e la
+versione ibrida è da 1,05 a 1,80 volte più veloce della migliore fra OpenMP e
+GPU sola, da 4,2 a 7,3 volte più veloce della sequenziale, contro il 2,6--3,5
+della sola OpenMP. Sulle GPU più veloci, invece, la GPU sola è quasi sempre la
+scelta migliore: una quota rende sui due grafi sociali, i più grandi per numero
+di archi, e al più 1,25 volte (\texttt{soc-Pokec} sulla GTX 1080 Ti), 1,20
+sulla RTX 2080 Ti a x16, 1,08 a x8, mai sulla RTX 2080 Ti della Macchina 2,
+dove la CPU ha 4 core, come quella della Macchina 1, invece dei 12 della
+Macchina 3: gli stessi core che bastano accanto alla GTX 1050 Ti sono troppo
+lenti accanto alla RTX 2080 Ti. La GTX 1080 Ti guadagna qualcosa, con quote piccole, anche su \texttt{web-Google}
+e \texttt{wiki-topcats}.
+
+\begin{table}[h]
+\centering
+\caption{La quota più veloce per ogni grafo e configurazione, e fra parentesi
+lo speed-up che dà rispetto alla GPU sola. Un trattino dove nessuna quota
+batte la GPU sola di più dell'1\,\%.
+M1, M2 e M3 sono le tre macchine.}
+\label{tab:quote}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+ & \textbf{GTX 1050 Ti} & \textbf{GTX 1080 Ti} &
+\multicolumn{3}{c}{\textbf{RTX 2080 Ti}} \\
+\cmidrule(l){4-6}
+\textbf{Grafo} & \textbf{M1} & \textbf{M2} &
+\textbf{M2} & \textbf{M3, x8} & \textbf{M3, x16} \\
+\midrule
+web-NotreDame    & 0,5 (1,05)  & ---          & --- & ---         & ---         \\
+web-Stanford     & 0,75 (1,66) & ---          & --- & ---         & ---         \\
+web-Google       & 0,75 (1,99) & 0,1 (1,05)   & --- & ---         & ---         \\
+web-BerkStan     & 0,1 (1,12)  & ---          & --- & ---         & ---         \\
+cit-Patents      & 0,5 (1,70)  & ---          & --- & ---         & ---         \\
+wiki-topcats     & 0,5 (1,82)  & 0,05 (1,02)  & --- & ---         & ---         \\
+soc-Pokec        & 0,75 (2,04) & 0,25 (1,25)  & --- & 0,1 (1,08)  & 0,25 (1,17) \\
+soc-LiveJournal1 & 0,5 (1,70)  & 0,25 (1,14)  & --- & 0,1 (1,03)  & 0,25 (1,20) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{figure/quote.pdf}
+\caption{Speed-up della versione ibrida rispetto alla GPU sola, al variare
+della quota di archi data alla CPU, un pannello per grafo, su asse verticale
+logaritmico. Sopra la linea tratteggiata dividere il lavoro conviene.
+La RTX 2080 Ti della Macchina 2 è solo nella Tabella~\ref{tab:quote}.
+Figura generata da \texttt{tools/plot\_hybrid.py}.}
+\label{fig:quote}
+\end{figure}
+
+\paragraph{Dove va il tempo di un'iterazione.}
+La Tabella~\ref{tab:fasi} scompone un'iterazione di
+\texttt{soc-LiveJournal1} con i tempi di \texttt{nsys}, e mostra perché
+dividere il lavoro conviene sulla Macchina 1 e quasi mai sulle GPU più veloci.
+Dopo \texttt{contrib\_kernel} il lavoro procede su due strade parallele
+(Figura~\ref{fig:iterazione}): la GPU fa l'accumulo delle sue righe; la CPU
+attende la copia di \texttt{contrib}, fa l'accumulo delle sue e rimanda i
+rank.
+L'iterazione dura quanto la più lunga delle due.\footnote{$\text{iter.} \approx \text{contrib} +
+\max(\text{accumulo GPU},\ \text{copia} + \text{accumulo CPU}) +
+\text{ritorno}$.} Sulla Macchina 1 a quota 0,5
+la strada della GPU è la più lunga, 43,5~ms di accumulo contro i 3,6 + 30,4 della
+CPU, che la attende per 9,9~ms; a 0,75 accade il contrario, e la strada più
+lunga è quella della CPU. La quota migliore, quella in cui le due strade
+durano uguale, sta quindi fra le due, poco sopra 0,5. Sulla RTX 2080 Ti a x16, a quota 0,25, le due strade
+quasi si equivalgono, 7,3~ms la GPU e 6,7 la CPU, e l'iterazione scende da 9,1
+a 7,6~ms. Sullo stesso grafo e alla stessa quota, a x8 la sola copia costa
+5,7~ms invece di 2,9~ms: la strada della CPU arriva a 9,5~ms, più dei
+7,3~ms della GPU e più anche dei 9,1~ms dell'intera iterazione con la GPU sola.
+Sulla Macchina 2, con 4 core invece di 12, la strada della CPU dura
+5,9~+~11,1~ms: tiene il passo della GTX 1080 Ti, il cui accumulo dura 16,5~ms, ma
+non della RTX 2080 Ti, che impiega 7,2~ms.
+
+\begin{table}[h]
+\centering
+\caption{Le fasi di un'iterazione di \texttt{soc-LiveJournal1}, in
+millisecondi, misurate con \texttt{nsys}. La copia
+è quella di \texttt{contrib} verso l'host, il ritorno quello dei rank della
+CPU più \texttt{scatter\_host\_ranks}, l'attesa quella dell'host per la GPU a
+fine iterazione. La colonna iter. è la durata dell'intera iterazione,
+contrib quella di \texttt{contrib\_kernel}. Ogni riga viene dalla più
+veloce delle tre esecuzioni della sua configurazione. Ogni valore è la
+mediana della durata di quella fase sulle iterazioni di quell'esecuzione,
+calcolata colonna per colonna: i valori di una
+stessa riga possono quindi venire da iterazioni diverse, e ricompongono
+iter. con una variazione di 0,1--0,2~ms. Con la GPU sola le fasi della CPU
+mancano, e i tempi della Macchina 3 sono gli stessi a x8 e a x16.}
+\label{tab:fasi}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llrrrrrrrr@{}}
+\toprule
+ & & & & & \textbf{accumulo} & & \textbf{accumulo} & & \\
+\textbf{GPU} & & \textbf{quota} & \textbf{iter.} & \textbf{contrib} &
+\textbf{GPU} & \textbf{copia} & \textbf{CPU} & \textbf{ritorno} &
+\textbf{attesa} \\
+\midrule
+GTX 1050 Ti & M1     & 0    & 76,9 & 1,2 & 75,6 & ---  & ---  & ---  & ---  \\
+            &        & 0,5  & 45,1 & 1,2 & 43,5 & 3,6  & 30,4 & 0,4  & 9,9  \\
+            &        & 0,75 & 54,4 & 1,2 & 23,5 & 3,6  & 48,6 & 0,9  & 0,9  \\
+\addlinespace
+GTX 1080 Ti & M2     & 0    & 20,1 & 0,3 & 19,7 & ---  & ---  & ---  & ---  \\
+            &        & 0,25 & 17,5 & 0,3 & 16,5 & 5,9  & 11,1 & 0,1  & 0,1  \\
+\addlinespace
+RTX 2080 Ti & M2     & 0,25 & 17,4 & 0,2 & 7,2  & 5,9  & 11,1 & 0,1  & 0,1  \\
+            & M3     & 0    & 9,1  & 0,2 & 8,9  & ---  & ---  & ---  & ---  \\
+            & M3 x8  & 0,25 & 10,0 & 0,2 & 7,3  & 5,7  & 3,8  & 0,1  & 0,1  \\
+            & M3 x16 & 0,05 & 9,0  & 0,2 & 8,7  & 2,9  & 0,8  & 0,0  & 5,0  \\
+            &        & 0,25 & 7,6  & 0,3 & 7,3  & 2,9  & 3,8  & 0,1  & 0,6  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Gli hub costano poco alla GPU.}
+Le quote piccole, che danno alla CPU i soli hub, non rendono quasi mai,
+e la ragione sta in un'ipotesi che le misure smentiscono: gli hub
+sono le righe che la GPU calcola meglio. Su \texttt{soc-LiveJournal1}, con la
+RTX 2080 Ti a x16, la quota 0,05 toglie alla GPU il 5\,\% degli archi,
+ma il suo accumulo scende solo da 8,86 a
+8,73~ms, l'1,5\,\%: quegli archi le costavano 0,04~ns l'uno, contro una media
+di 0,13. Il kernel a blocchi li legge con accessi coalescenti, e su righe così
+lunghe i thread del blocco restano tutti al lavoro. La copia di
+\texttt{contrib}, invece, è il costo fisso della versione ibrida, $8N$ byte per
+iterazione qualunque sia la quota,
+e per guadagnare la CPU deve togliere alla GPU abbastanza lavoro
+da ripagarlo. Sulla GTX 1050 Ti, dove ogni arco costa alla GPU molto di più,
+basta poco; sulle GPU più veloci servono quote alte, che però allungano la
+strada della CPU oltre quella della GPU.
+
+\paragraph{Il collegamento.}
+La banda della copia di \texttt{contrib}, misurata da \texttt{nsys}, è
+di 11,2~GB/s sulla Macchina 1, a x16, di 6,6~GB/s sulle due GPU della
+Macchina 2, entrambe a x8, e di 6,8~GB/s e 13,5~GB/s sulle due RTX 2080 Ti
+della Macchina 3, a x8 e a x16. Con la GPU sola
+il collegamento non conta: le due schede della Macchina 3 danno tempi uguali
+entro il 3\,\%, perché durante il calcolo sul bus non passa quasi nulla. Con
+una quota per la CPU, invece, è il collegamento a decidere: a parità di GPU e
+di CPU, la x16 rende la versione ibrida 1,20 volte più veloce della GPU sola su
+\texttt{soc-LiveJournal1}, la x8 appena 1,03.
+
+\paragraph{Pochi thread sulle righe della CPU.}
+Su \texttt{web-Stanford} e \texttt{web-BerkStan} l'accumulo della CPU
+non cresce in modo regolare con la quota. Sulla RTX 2080 Ti della Macchina 3,
+a x16, quello di \texttt{web-Stanford} dura per iterazione 0,33~ms a quota
+0,05, 0,61~ms a 0,1, 0,82~ms a 0,25 e solo 0,48~ms a 0,5, pur con il doppio
+degli archi rispetto a 0,25. L'accumulo della CPU dà le righe ai thread in
+chunk di 16,
+\texttt{schedule(dynamic,~16)}, e su questi grafi le righe della CPU sono poche
+e lunghissime. Su \texttt{web-Stanford}, a quota 0,05 e 0,1 sono 4 e 10, un
+solo chunk: lavora un solo thread su 24. A 0,25 sono 92, sei chunk, e
+lavorano sei thread. A 0,5 sono 2\,519, e lavorano tutti i 24 thread. Conta
+quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
 
 % =====================================================================
 \section{Valutazioni e osservazioni}
@@ -1379,10 +1961,19 @@ sovrapposizione fra trasferimenti e calcolo.}
     divisioni da $M$ a $N$, ma soprattutto lascia una lettura sola per arco.
   \item \textbf{Verifica indipendente e collaudata.} Tre implementazioni
     concordano, e lo strumento di verifica è
-    stato validato con un'iniezione di guasto.
+    stato validato con anche un'iniezione di guasto.
+  \item \textbf{Un solo codice per la GPU sola e per l'ibrida.} Con
+    quota 0 la versione ibrida è la versione solo GPU, senza copie e senza
+    thread OpenMP: le due non possono divergere, e il confronto fra loro misura
+    soltanto l'effetto della quota.
+  \item \textbf{Portabilità verificata.} Lo stesso sorgente, ricompilato
+    su ogni macchina, è stato eseguito senza modifiche su cinque
+    GPU, di tre modelli e due architetture, con tre versioni del CUDA Toolkit;
+    griglie e memoria sono dimensionate a tempo di esecuzione.
 \end{itemize}
 
 \subsection{Punti deboli e limiti}
+\label{sec:limiti}
 \begin{itemize}
   \item \textbf{Il convertitore non scala oltre le istanze usate.} Il
     convertitore Python mantiene l'intera edge list in memoria: se in futuro
@@ -1390,50 +1981,90 @@ sovrapposizione fra trasferimenti e calcolo.}
   \item \textbf{Formato binario non standard.} Il formato \texttt{.csr} è
     specifico del progetto: è velocissimo da caricare e tiene il programma C
     libero da un parser, ma non è ispezionabile con strumenti esterni.
-  \item \textbf{Dimensione della porzione dinamica non ottimizzata.} Il
-    valore 256 di \texttt{schedule(dynamic, 256)} non è stato oggetto di
-    una ricerca sistematica.
+  \item \textbf{La copia di \texttt{contrib} a ogni iterazione.} Con
+    qualunque quota diversa da 0, l'intero vettore \texttt{contrib} passa sul
+    bus a ogni iterazione, $8N$ byte in doppia precisione: è il costo che
+    decide la convenienza della versione ibrida
+    (Sezione~\ref{sec:ibrida-risultati}).
+  \item \textbf{Thread inattivi sulle righe della CPU.} Nella versione ibrida
+    l'accumulo della CPU usa \texttt{schedule(dynamic,~16)}: le righe vanno ai
+    thread in chunk di 16, e quando sono poche e lunghe finiscono in pochi chunk,
+    e lavorano pochi thread, a volte uno solo, mentre gli altri restano fermi
+    (Sezione~\ref{sec:ibrida-risultati}).
 \end{itemize}
 
 \subsection{Possibili miglioramenti}
 \begin{itemize}
   \iffalse
-  \item \textbf{Gestione out-of-core.} Una
-    logica di streaming per grafi eccedenti la memoria della GPU, che
-    per le istanze considerate non è necessaria.
-    Resta un possibile sviluppo futuro, subordinato però alla riscrittura
-    del convertitore.
-  \item \textbf{Granularità adattiva sulla GPU.} Le misure di
-    Tabella~\ref{tab:bins} sono già disponibili ma non ancora sfruttate.
+  \item \textbf{Nessuna gestione \emph{out-of-core}.}
+    Per i grafi che non stanno nella memoria della GPU.
+    Nessuna istanza la richiede: la più grande occupa
+    sulla GPU circa 450~MiB, l'11\,\% della memoria della GTX 1050 Ti, e per
+    superarla servirebbe un grafo nove volte più grande, oltre 600 milioni di
+    archi, che il convertitore Python, con il suo centinaio di byte per arco,
+    non potrebbe preparare con meno di 60~GB di memoria. Il programma
+    controlla comunque la memoria libera prima di allocare, e si ferma con un
+    messaggio invece di fallire più avanti.
   \fi
-  \item \textbf{Ricerca su politica di scheduling e dimensione del blocco.}
-    Il parametro non governa solo il bilanciamento del carico: blocchi più
-    ampi danno a un thread più righe consecutive, quindi più riuso delle
+  \item \textbf{Ricerca su politica di scheduling e dimensione del chunk.}
+    Nella versione OpenMP il chunk di \texttt{schedule(dynamic, 256)}, fissato a 256 senza una
+    ricerca sistematica, non governa solo il bilanciamento del carico:
+    chunk più ampi danno a un thread più righe consecutive, quindi più riuso delle
     linee già in cache. L'ottimo è un compromesso fra le due cose e dipende
     dal grafo; varrebbe la pena cercarlo, confrontando anche politiche come
     \texttt{guided}.
-  \item \nuovo{\textbf{Soglie della granularità adattiva.} Nella versione
+  \item \textbf{Soglie della granularità adattiva.} Nella versione
     ibrida la GPU dà un thread alle righe fino a 16 predecessori, un warp a
     quelle fino a 256 e un blocco alle più lunghe (opzione \texttt{-b}).
     Queste due soglie sono state fissate dopo poche prove, senza
     un'analisi approfondita, e quelle migliori dipendono verosimilmente dal
-    grafo e dalla GPU: andrebbero cercate in modo sistematico, misurando il
-    gather al variare delle due soglie. Le soglie 4 e 32 della
-    Tabella~\ref{tab:bins} servono invece solo a illustrare l'idea.}
-  \item \nuovo{\textbf{Bilanciamento automatico della quota.} Nella versione
+    grafo e dalla GPU: andrebbero cercate in modo sistematico, misurando
+    i tempi di accumulo al variare delle due soglie e confrontandoli con quelli del
+    kernel ingenuo, un thread per riga, che non è stato misurato.
+  \item \textbf{Bilanciamento automatico della quota.} Nella versione
     ibrida la quota di archi assegnata alla CPU è un parametro
     (\texttt{-s}), e la migliore è quella con cui CPU e GPU finiscono il
     proprio lavoro insieme: dipende quindi dal grafo e dal rapporto fra la
     velocità della CPU e quella della GPU della macchina. Il programma
     potrebbe trovarla da solo nelle prime iterazioni: se a fine iterazione
     la CPU ha aspettato la GPU, le cede altre righe; se invece è la GPU ad
-    aver aspettato, gliene toglie. Sarebbe l'estensione naturale del
-    requisito di portabilità alla ripartizione del lavoro, che oggi si
-    sceglie a mano.}
+    aver aspettato, gliene toglie.
+  \item \textbf{Copiare solo i contributi che servono alla CPU.} Nella
+    versione ibrida, le righe della CPU non leggono tutto \texttt{contrib}: su
+    \texttt{soc-LiveJournal1} a quota 0,25 i loro predecessori distinti sono
+    il 36\,\% dei nodi. Un kernel che raccogliesse quei soli contributi in un
+    vettore compatto ridurrebbe la copia a circa un terzo: sulla RTX 2080 Ti
+    a x8 da 5,7 a circa 2~ms, abbastanza perché anche lì la quota 0,25 batta la GPU sola. Il
+    guadagno dipende dal grafo: su \texttt{wiki-topcats}, alla stessa quota, i
+    predecessori distinti sono l'89\,\% dei nodi.
+  \item \textbf{Righe della CPU una alla volta.} Con
+    \texttt{schedule(dynamic,~1)} nell'accumulo della CPU della versione
+    ibrida ogni thread prenderebbe
+    una riga per volta: su righe così lunghe il costo della distribuzione è
+    trascurabile, e nessun thread resterebbe inattivo.
+  \item \textbf{Accumulare in singola precisione nella variante
+    \texttt{float}.} Se il rallentamento della singola precisione sulla GPU
+    viene dalla conversione dei contributi in \texttt{double}, accumulare in
+    \texttt{float} lo eliminerebbe, a prezzo dell'accuratezza, da verificare
+    sulla soglia di convergenza.
 \end{itemize}
 
-\daFare{Aggiungere la valutazione personale complessiva una volta
-completata la fase CUDA.}
+\subsection{Valutazione complessiva}
+La convenienza della versione ibrida non dipende dal codice ma dal
+rapporto fra tre velocità: quella della GPU, quella della CPU e quella del
+collegamento fra le due. Dove GPU e CPU si equivalgono, come sulla Macchina 1,
+dividere il lavoro rende fino a 1,8 volte la migliore delle due da sola; dove
+la GPU è molto più veloce, la copia a ogni iterazione costa più di quanto la
+CPU possa restituire, e conviene lasciarle tutto.
+
+\stacco
+Il filo comune a tutte le misure è che il calcolo è limitato dalla
+memoria, sulla CPU come sulla GPU. I tempi li spiegano la località delle
+letture di \texttt{contrib}, i byte che ogni lettura trasferisce, in
+\texttt{double} o in \texttt{float}, e le copie fra CPU e GPU, molto più del
+numero di core o di SM. Diversamente da~\cite{visali2024}, che indica in CUDA la
+parallelizzazione più efficiente di PageRank, qui la risposta dipende dalla
+macchina.
 
 \subsection{Codice sorgente e guida all'uso}
 La repository è disponibile all'indirizzo
@@ -1451,15 +2082,9 @@ per riscaricare i dataset, che non sono versionati per ragioni di dimensione.
 \bibitem{snap} J.~Leskovec, A.~Krevl, \emph{SNAP Datasets: Stanford Large
   Network Dataset Collection}, \url{https://snap.stanford.edu/data}, 2014.
 
-% Voci tenute da parte per la fase CUDA: thebibliography stampa tutto quello
-% che elenca, anche senza una \cite che vi rimandi, quindi restano commentate
-% finche' il testo non le cita davvero.
-% \bibitem{visali2024} V.~Visali, R.~Manimegalai, S.~Noor Mahammad,
-%   A.~Sunitha Nandhini, \emph{Performance Analysis of Parallelized PageRank
-%   Algorithm using OpenMP, MPI and CUDA}, ICSSEECC, pp.~44--49, IEEE, 2024.
-% \bibitem{kirk2016} D.~B.~Kirk, W.~W.~Hwu, \emph{Programming Massively
-%   Parallel Processors}, 3rd ed., Morgan Kaufmann, 2016.
-% \bibitem{cuda} NVIDIA, \emph{CUDA C++ Programming Guide}.
+\bibitem{visali2024} V.~Visali, R.~Manimegalai, S.~Noor Mahammad,
+  A.~Sunitha Nandhini, \emph{Performance Analysis of Parallelized PageRank
+  Algorithm using OpenMP, MPI and CUDA}, ICSSEECC, pp.~44--49, IEEE, 2024.
 \end{thebibliography}
 
 \end{document}
