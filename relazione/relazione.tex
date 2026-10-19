@@ -1533,7 +1533,7 @@ Non è nemmeno una questione di lavoro
 svolto, perché \texttt{web-BerkStan} ha il $49\,\%$ di archi in più: a parità di
 arco \texttt{web-Google} costa $1{,}19$~ns
 \footnote{0,377 s  /  62 iterazioni = 0,00608 s; 0,00608 s  /  5105039 archi = 1,19 ns per arco.}
-contro $0{,}44$ di \texttt{web-BerkStan}, più di due volte e mezzo tanto.
+contro $0{,}44$~ns di \texttt{web-BerkStan}, più di due volte e mezzo tanto.
 
 \stacco
 Ogni riga --- i predecessori di un nodo --- porta un costo fisso (leggere i due
@@ -1700,7 +1700,7 @@ Come per OpenMP, ogni configurazione è stata eseguita tre volte e si riporta
 il minimo. Ogni esecuzione della versione ibrida è avvenuta sotto il profiler 
 \texttt{nsys}, che introduce un overhead di circa l'1\,\% del tempo e registra
 inizio e fine di ogni kernel e di ogni copia (i report di \texttt{nsys}
-letti tramite \texttt{tools/nsys\_phases.py}). Tutti i tempi di questa
+sono letti da \texttt{tools/nsys\_phases.py}). Tutti i tempi di questa
 sezione sono della variante in doppia precisione, tranne quelli del
 paragrafo sulla singola precisione.
 
@@ -1846,11 +1846,11 @@ rank.
 L'iterazione dura quanto la più lunga delle due.\footnote{$\text{iter.} \approx \text{contrib} +
 \max(\text{accumulo GPU},\ \text{copia} + \text{accumulo CPU}) +
 \text{ritorno}$.} Sulla Macchina 1 a quota 0,5
-la strada della GPU è la più lunga, 43,5~ms di accumulo contro i 3,6 + 30,4 della
+la strada della GPU è la più lunga, 43,5~ms di accumulo contro i 3,6~+~30,4~ms della
 CPU, che la attende per 9,9~ms; a 0,75 accade il contrario, e la strada più
 lunga è quella della CPU. La quota migliore, quella in cui le due strade
 durano uguale, sta quindi fra le due, poco sopra 0,5. Sulla RTX 2080 Ti a x16, a quota 0,25, le due strade
-quasi si equivalgono, 7,3~ms la GPU e 6,7 la CPU, e l'iterazione scende da 9,1
+quasi si equivalgono, 7,3~ms la GPU e 6,7~ms la CPU, e l'iterazione scende da 9,1
 a 7,6~ms. Sullo stesso grafo e alla stessa quota, a x8 la sola copia costa
 5,7~ms invece di 2,9~ms: la strada della CPU arriva a 9,5~ms, più dei
 7,3~ms della GPU e più anche dei 9,1~ms dell'intera iterazione con la GPU sola.
@@ -1905,7 +1905,7 @@ sono le righe che la GPU calcola meglio. Su \texttt{soc-LiveJournal1}, con la
 RTX 2080 Ti a x16, la quota 0,05 toglie alla GPU il 5\,\% degli archi,
 ma il suo accumulo scende solo da 8,86 a
 8,73~ms, l'1,5\,\%: quegli archi le costavano 0,04~ns l'uno, contro una media
-di 0,13. Il kernel a blocchi li legge con accessi coalescenti, e su righe così
+di 0,13~ns. Il kernel a blocchi li legge con accessi coalescenti, e su righe così
 lunghe i thread del blocco restano tutti al lavoro. La copia di
 \texttt{contrib}, invece, è il costo fisso della versione ibrida, $8N$ byte per
 iterazione qualunque sia la quota,
@@ -1952,7 +1952,7 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     dipende solo dalla colonna, non dal singolo arco: il formato generico
     obbligherebbe a ripetere lo stesso $1/\mathrm{outdeg}(u)$ una volta per
     arco uscente di $u$, mentre \texttt{out\_deg[N]} lo registra una volta
-    sola. E' un'informazione duplicata che non viene
+    sola. È un'informazione duplicata che non viene
     scritta.
   \item \textbf{Il vettore \texttt{contrib} riduce gli accessi sparsi.} Senza
     di esso il ciclo di accumulo dovrebbe leggere, per ogni arco,
@@ -1961,7 +1961,7 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     divisioni da $M$ a $N$, ma soprattutto lascia una lettura sola per arco.
   \item \textbf{Verifica indipendente e collaudata.} Tre implementazioni
     concordano, e lo strumento di verifica è
-    stato validato con anche un'iniezione di guasto.
+    stato validato anche con un'iniezione di guasto.
   \item \textbf{Un solo codice per la GPU sola e per l'ibrida.} Con
     quota 0 la versione ibrida è la versione solo GPU, senza copie e senza
     thread OpenMP: le due non possono divergere, e il confronto fra loro misura
@@ -2034,7 +2034,7 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     \texttt{soc-LiveJournal1} a quota 0,25 i loro predecessori distinti sono
     il 36\,\% dei nodi. Un kernel che raccogliesse quei soli contributi in un
     vettore compatto ridurrebbe la copia a circa un terzo: sulla RTX 2080 Ti
-    a x8 da 5,7 a circa 2~ms, abbastanza perché anche lì la quota 0,25 batta la GPU sola. Il
+    della Macchina 3, a x8, da 5,7 a circa 2~ms, abbastanza perché anche lì la quota 0,25 batta la GPU sola. Il
     guadagno dipende dal grafo: su \texttt{wiki-topcats}, alla stessa quota, i
     predecessori distinti sono l'89\,\% dei nodi.
   \item \textbf{Righe della CPU una alla volta.} Con
