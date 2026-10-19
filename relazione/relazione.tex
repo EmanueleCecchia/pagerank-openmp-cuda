@@ -2049,8 +2049,22 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     sulla soglia di convergenza.
 \end{itemize}
 
-\daFare{Aggiungere la valutazione personale complessiva una volta
-completata la fase CUDA.}
+\subsection{Valutazione complessiva}
+La convenienza della versione ibrida non dipende dal codice ma dal
+rapporto fra tre velocità: quella della GPU, quella della CPU e quella del
+collegamento fra le due. Dove GPU e CPU si equivalgono, come sulla Macchina 1,
+dividere il lavoro rende fino a 1,8 volte la migliore delle due da sola; dove
+la GPU è molto più veloce, la copia a ogni iterazione costa più di quanto la
+CPU possa restituire, e conviene lasciarle tutto.
+
+\stacco
+Il filo comune a tutte le misure è che il calcolo è limitato dalla
+memoria, sulla CPU come sulla GPU. I tempi li spiegano la località delle
+letture di \texttt{contrib}, i byte che ogni lettura trasferisce, in
+\texttt{double} o in \texttt{float}, e le copie fra CPU e GPU, molto più del
+numero di core o di SM. Diversamente da~\cite{visali2024}, che indica in CUDA la
+parallelizzazione più efficiente di PageRank, qui la risposta dipende dalla
+macchina.
 
 \subsection{Codice sorgente e guida all'uso}
 La repository è disponibile all'indirizzo
@@ -2068,15 +2082,9 @@ per riscaricare i dataset, che non sono versionati per ragioni di dimensione.
 \bibitem{snap} J.~Leskovec, A.~Krevl, \emph{SNAP Datasets: Stanford Large
   Network Dataset Collection}, \url{https://snap.stanford.edu/data}, 2014.
 
-% Voci tenute da parte per la fase CUDA: thebibliography stampa tutto quello
-% che elenca, anche senza una \cite che vi rimandi, quindi restano commentate
-% finche' il testo non le cita davvero.
-% \bibitem{visali2024} V.~Visali, R.~Manimegalai, S.~Noor Mahammad,
-%   A.~Sunitha Nandhini, \emph{Performance Analysis of Parallelized PageRank
-%   Algorithm using OpenMP, MPI and CUDA}, ICSSEECC, pp.~44--49, IEEE, 2024.
-% \bibitem{kirk2016} D.~B.~Kirk, W.~W.~Hwu, \emph{Programming Massively
-%   Parallel Processors}, 3rd ed., Morgan Kaufmann, 2016.
-% \bibitem{cuda} NVIDIA, \emph{CUDA C++ Programming Guide}.
+\bibitem{visali2024} V.~Visali, R.~Manimegalai, S.~Noor Mahammad,
+  A.~Sunitha Nandhini, \emph{Performance Analysis of Parallelized PageRank
+  Algorithm using OpenMP, MPI and CUDA}, ICSSEECC, pp.~44--49, IEEE, 2024.
 \end{thebibliography}
 
 \end{document}
