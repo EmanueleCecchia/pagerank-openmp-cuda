@@ -744,7 +744,7 @@ for (v = 0; v < n; v++) {
 \stacco
 La clausola \texttt{reduction(+ : dangling)} assegna a ogni thread una copia
 privata della variabile, inizializzata a zero, e ne somma i valori al
-termine del ciclo. È la soluzione corretta e veloce al problema
+termine del ciclo. È la soluzione migliore al problema
 dell'aggiornamento concorrente: una variabile condivisa protetta da lock
 serializzerebbe l'intero ciclo. Lo scheduling è \texttt{static} perché il
 lavoro per iterazione è costante.
@@ -1041,7 +1041,8 @@ Le copie asincrone richiedono memoria dell'host \emph{page-locked},
 l'unica che la GPU può leggere e scrivere da sé mentre esegue i kernel: il
 buffer che riceve \texttt{contrib} e quello dei rank della CPU sono allocati
 con \texttt{cudaMallocHost}. Gli eventi servono solo a
-sincronizzare, e sono creati con \texttt{cudaEventDisableTiming}.
+sincronizzare: sono creati con \texttt{cudaEventDisableTiming}, che evita di
+registrare l'istante in cui avvengono, qui inutile.
 
 \begin{figure}[htbp]
 \centering
