@@ -1720,9 +1720,9 @@ secondo la macchina, contro 0,47~s di calcolo sulla RTX 2080 Ti.
 \caption{Tempi in secondi della GPU sola (quota 0) e, per confronto, della
 migliore configurazione OpenMP della stessa macchina (8 thread sulla Macchina
 1, 24 sulla Macchina 3). La RTX 2080 Ti è quella della Macchina 3 sul
-collegamento x16: con la GPU sola, sull'altra e su quella della Macchina 2 i
-tempi coincidono entro il 3\,\%. Sulla Macchina 2 la versione OpenMP non è
-stata misurata.}
+collegamento x16: con la GPU sola, sull'altra RTX 2080 Ti della Macchina 3
+e su quella della Macchina 2 i tempi coincidono entro il 3\,\%. 
+Sulla Macchina 2 la versione OpenMP non è stata misurata.}
 \label{tab:gpu-sola}
 \small
 \begin{tabular}{@{}lrrrrr@{}}
@@ -1801,8 +1801,7 @@ e \texttt{wiki-topcats}.
 \centering
 \caption{La quota più veloce per ogni grafo e configurazione, e fra parentesi
 lo speed-up che dà rispetto alla GPU sola. Un trattino dove nessuna quota
-batte la GPU sola di più dell'1\,\%.
-M1, M2 e M3 sono le tre macchine.}
+batte la GPU sola di più dell'1\,\%.}
 \label{tab:quote}
 \small
 \begin{tabular}{@{}lccccc@{}}
@@ -1831,7 +1830,6 @@ soc-LiveJournal1 & 0,5 (1,70)  & 0,25 (1,14)  & --- & 0,1 (1,03)  & 0,25 (1,20) 
 \caption{Speed-up della versione ibrida rispetto alla GPU sola, al variare
 della quota di archi data alla CPU, un pannello per grafo, su asse verticale
 logaritmico. Sopra la linea tratteggiata dividere il lavoro conviene.
-La RTX 2080 Ti della Macchina 2 è solo nella Tabella~\ref{tab:quote}.
 Figura generata da \texttt{tools/plot\_hybrid.py}.}
 \label{fig:quote}
 \end{figure}
