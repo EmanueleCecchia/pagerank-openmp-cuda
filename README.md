@@ -157,7 +157,8 @@ and no CPU thread started.
 
 A `-b` threshold T beyond the longest row gives every GPU row its own thread,
 which is the naive kernel the classes are compared against:
-`-s 0 -b 1000000,1000000`.
+`-s 0 -b 1000000,1000000` (see [the naive kernel against the
+classes](#the-naive-kernel-against-the-classes)).
 
 ### Saving the results
 
@@ -275,6 +276,27 @@ the host, the CPU's accumulation, the ranks going back, the waits — and writes
 `bench.csv`, from the very same run, with its time copied for checking.
 The profiler costs about 1% of the time. `NSYS=` runs without it.
 
+### The naive kernel against the classes
+
+`tools/granularity.sh` measures what the granularity classes gain. It runs
+the GPU alone (`-s 0`), in double precision, three repetitions per graph,
+twice: with the naive kernel, one thread per row (`-b 1000000,1000000`), and
+with the default classes (`-b 16,256`). Each run goes under `nsys`, which this
+script needs, and each configuration gets a folder of its own, with its own
+`bench.csv`, reports and `nsys_phases.csv`:
+
+- `results/<machine>/granularity/naive/`
+- `results/<machine>/granularity/class-16-256/`
+
+The results of `run_benchmarks.sh` are not touched; running the script again
+replaces only what it wrote before. Run it from the repository root, once per
+GPU, picked with `CUDA_VISIBLE_DEVICES` as above:
+
+```bash
+MACHINE=machine1 tools/granularity.sh
+CUDA_VISIBLE_DEVICES=0 MACHINE=machine3/x16 tools/granularity.sh
+```
+
 The analysis tools read what the sweep produced:
 
 ```bash
@@ -320,11 +342,12 @@ the MiB one iteration asks for.
   the CPU taking the longest rows),
   `main.c` (driver), `csr_info.c` (graph statistics)
 - `tools/` — Python and shell helpers: conversion, verification, benchmark
-  sweep, figures, table of the hybrid times, 
+  sweep, naive kernel against the classes, figures, table of the hybrid times,
   phases of the hybrid iterations, locality statistics
 - `relazione/` — the report, LaTeX source and compiled PDF
 - `results/` — one folder per machine, and inside it one per GPU when the
   machine has more than one: `bench.csv` (every run), `nsys_phases.csv` (the
-  phases of the hybrid runs), and the gitignored rank vectors and nsys reports
+  phases of the hybrid runs), `granularity/` (the naive kernel against the
+  classes), and the gitignored rank vectors and nsys reports
 - `data/` — the datasets (gitignored)
 - `build/` — the executables (gitignored)
