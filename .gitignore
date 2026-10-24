@@ -84,8 +84,8 @@ results/**/nsys/
 *.bbl
 *.blg
 
-# Crash dumps lasciati dai tool MSYS/Cygwin su Windows
+# Crash dumps left by the MSYS/Cygwin tools on Windows
 *.stackdump
 
-# Configurazione dell'editor, specifica della macchina
+# Editor configuration, specific to the machine
 .vscode/
