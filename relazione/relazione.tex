@@ -86,7 +86,9 @@ passaggio alla GPU.
 
 La versione ibrida è stata misurata su cinque GPU di tre macchine.
 Da sola, una RTX 2080 Ti è da $1{,}4$ a $2{,}9$ volte più veloce dei 24 thread
-della CPU a 12 core. Dividere il lavoro fra CPU e GPU conviene quando le due,
+della CPU a 12 core. Sulla GPU, dare alle righe più lunghe un warp o un
+blocco di thread, invece di un thread solo, la rende fino a $19$ volte più
+veloce sui grafi dominati da poche righe lunghissime. Dividere il lavoro fra CPU e GPU conviene quando le due,
 usate da sole, impiegano tempi simili: su un portatile, dove una GTX 1050 Ti
 e 4 core vanno quasi alla pari, la versione ibrida è fino a $1{,}8$ volte più
 veloce della più rapida fra le due. Con GPU più veloci conviene quasi sempre lasciare
@@ -290,7 +292,7 @@ necessario distribuire il calcolo su più unità di elaborazione.
 % =====================================================================
 
 \subsection{Struttura del codice}
-Il progetto si compone di quattordici moduli, dei quali tre soli formano il
+Il progetto si compone di quindici moduli, dei quali tre soli formano il
 programma di calcolo vero e proprio: \texttt{src/pagerank.c}
 e \texttt{src/pagerank\_cuda.cu}, che contengono il
 nucleo cronometrato --- il primo nelle versioni sequenziale e OpenMP, il
@@ -311,6 +313,7 @@ servono a controllare i risultati.
 \texttt{src/csr\_info.c}              & statistiche di un grafo convertito \\
 \texttt{tools/verify\_pagerank.py}    & verifica indipendente \\
 \texttt{tools/run\_benchmarks.sh}     & misure su tutte le configurazioni \\
+\texttt{tools/granularity.sh} & confronto fra il kernel ingenuo e le classi \\
 \texttt{tools/plot\_results.py}       & figure di scalabilità \\
 \texttt{tools/locality\_stats.py}     & statistiche di località delle letture sparse \\
 \texttt{tools/nsys\_phases.py}        & fasi delle iterazioni ibride, dai profili \texttt{nsys} \\
@@ -931,7 +934,8 @@ Questi numeri giustificano la scelta descritta sopra. Con un thread per riga,
 una sola riga di centinaia di migliaia di predecessori fermerebbe il suo warp
 per altrettanti passi. Con le classi, nessun thread aspetta gli altri del suo
 warp per più di 16 passi, e ogni warp o blocco lavora con almeno metà dei suoi
-thread.
+thread. La Sezione~\ref{sec:ibrida-risultati} lo verifica sperimentalmente
+(Tabella~\ref{tab:granularita}).
 
 \stacco
 La Figura~\ref{fig:predecessori} mostra la stessa distribuzione nodo per
@@ -1576,8 +1580,9 @@ La Tabella~\ref{tab:riga-nodo1} mostra la riga del nodo~1 nei due grafi.
 Le linee richieste non costano tutte uguale: \texttt{contrib} occupa
 $6{,}7$~MiB su \texttt{web-Google} e $5{,}2$~MiB su \texttt{web-BerkStan},
 abbastanza poco perché una parte degli accessi sparsi resti servita dalla
-cache invece di arrivare in memoria. L'altra coppia di grafi web lo mostra
-dal lato opposto: \texttt{web-Stanford} ha indici sparsi quasi quanto
+cache invece di arrivare in memoria. Gli altri due grafi web,
+\texttt{web-Stanford} e \texttt{web-NotreDame}, lo mostrano dal lato opposto:
+\texttt{web-Stanford} ha indici sparsi quasi quanto
 \texttt{web-Google}, $0{,}91$ linee di cache per arco contro $0{,}99$, ma il
 suo \texttt{contrib} di $2{,}2$~MiB sta per intero in cache con ampio margine, e il divario con
 \texttt{web-NotreDame}, locale come \texttt{web-BerkStan}, si riduce a
@@ -1604,9 +1609,9 @@ per arco un po' di più.
 
 \stacco
 La Macchina 3 conferma questa lettura dal lato dell'hardware (colonne
-M1 e M3 della Tabella~\ref{tab:localita}). Il suo core non è più veloce: da
+M1 e M3 della Tabella~\ref{tab:localita}). Core per core non è più veloce: da
 sequenziale, sui quattro grafi web, le due CPU si equivalgono entro il
-6\,\%. Ha però una L3 di 21~MiB anziché 8, e a 4 thread il suo vantaggio è
+6\,\%, due volte a favore dell'una e due dell'altra. Ha però una L3 di 21~MiB anziché 8, e a 4 thread il suo vantaggio è
 modesto sui quattro grafi web, il cui \texttt{contrib} sta già nella L3 della
 Macchina 1, e forte sulle quattro
 istanze maggiori, il cui \texttt{contrib} non ci sta.
