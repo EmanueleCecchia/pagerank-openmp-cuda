@@ -22,6 +22,7 @@ the measurements are in [`relazione/relazione.pdf`](relazione/relazione.pdf)
 | figures | `matplotlib` |
 | hybrid version | CUDA Toolkit (`nvcc`) |
 | benchmark sweep | Linux, `bash`, `nproc`, `lscpu`; optionally Nsight Systems (`nsys`), to profile the hybrid runs |
+| naive kernel against the classes | Linux, `bash`, Nsight Systems (`nsys`) |
 
 To create the conda environment:
 
@@ -229,7 +230,7 @@ the sequential, three repetitions each, and writes:
 - `results/<machine>/<graph>.ranks.txt` — the rank vectors (gitignored).
 
 The OpenMP thread counts follow the CPU: the powers of two up to the logical
-CPUs, plus the physical cores and the logical CPUs themselves (ex. 1/2/4/8 on the
+CPUs, plus the physical cores and the logical CPUs themselves (e.g. 1/2/4/8 on the
 4-core/8-thread machine). The hybrid build runs on every logical CPU, once for
 each share of the edges for the CPU: 0 (the GPU alone), 0.05, 0.1, 0.25, 0.5, 0.75
 and 1 (every row with in-neighbours on the CPU; not the same as the OpenMP
