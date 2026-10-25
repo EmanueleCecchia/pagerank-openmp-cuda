@@ -1759,6 +1759,79 @@ legge in settori da 32 byte: un arco che chiede un contributo lontano dagli altr
 intero per 8 byte utili; sulla CPU, per gli stessi 8 byte, impegna una linea
 di cache da 64 byte.
 
+\paragraph{Le classi contro un thread per riga.}
+Per misurare che cosa rendono le tre classi del secondo ciclo, 
+la GPU sola è stata eseguita anche con il kernel
+ingenuo, un thread per riga, che si ottiene con \texttt{-b 1000000,1000000}:
+una soglia oltre la riga più lunga dà a ogni riga il suo thread. Le due
+versioni sono state misurate nella stessa sessione, con
+\texttt{tools/granularity.sh}, sulla GTX 1050 Ti della Macchina 1, sulla GTX
+1080 Ti della Macchina 2 e sulla RTX 2080 Ti della Macchina 3, a x16
+(Tabella~\ref{tab:granularita}); la RTX 2080 Ti della Macchina 2, che con la
+GPU sola dà gli stessi tempi di quella della Macchina 3, non è stata misurata.
+Secondo \texttt{nsys} la differenza fra le due versioni è quasi tutta
+nell'accumulo: \texttt{contrib\_kernel} cambia al più di qualche centesimo di
+millisecondo.
+
+\begin{table}[h]
+\centering
+\caption{Tempi in secondi della GPU sola con il kernel ingenuo, un thread per
+riga, e con le classi 16 e 256; $\times$ è quante volte le classi sono più
+veloci. Riga max è la lunghezza della riga più lunga, in percentuale degli
+archi. Le classi sono state rimisurate insieme all'ingenuo.
+La RTX 2080 Ti è quella della Macchina 3, a x16.}
+\label{tab:granularita}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lrrrrrrrrrr@{}}
+\toprule
+ & & \multicolumn{3}{c}{\textbf{GTX 1050 Ti}} &
+\multicolumn{3}{c}{\textbf{GTX 1080 Ti}} &
+\multicolumn{3}{c}{\textbf{RTX 2080 Ti}} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(l){9-11}
+\textbf{Grafo} & \textbf{riga max} & \textbf{ingenuo} & \textbf{classi} &
+$\times$ & \textbf{ingenuo} & \textbf{classi} & $\times$ &
+\textbf{ingenuo} & \textbf{classi} & $\times$ \\
+\midrule
+web-NotreDame    & 0,72  & 0,086 & 0,027 & 3,19 & 0,061 & 0,010 & 6,28  & 0,046 & 0,010 & 4,80  \\
+web-Stanford     & 1,67  & 0,580 & 0,126 & 4,59 & 0,230 & 0,019 & 11,87 & 0,152 & 0,014 & 10,87 \\
+web-Google       & 0,12  & 0,608 & 0,534 & 1,14 & 0,172 & 0,113 & 1,51  & 0,062 & 0,041 & 1,53  \\
+web-BerkStan     & 1,11  & 0,677 & 0,094 & 7,24 & 0,516 & 0,027 & 19,13 & 0,342 & 0,028 & 12,10 \\
+cit-Patents      & 0,005 & 0,439 & 0,444 & 0,99 & 0,112 & 0,110 & 1,02  & 0,050 & 0,049 & 1,02  \\
+wiki-topcats     & 0,83  & 2,265 & 0,777 & 2,91 & 1,393 & 0,188 & 7,40  & 0,627 & 0,085 & 7,35  \\
+soc-Pokec        & 0,045 & 2,302 & 1,963 & 1,17 & 0,629 & 0,435 & 1,45  & 0,214 & 0,160 & 1,34  \\
+soc-LiveJournal1 & 0,020 & 4,873 & 3,921 & 1,24 & 1,502 & 1,023 & 1,47  & 0,566 & 0,465 & 1,22  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\stacco
+I grafi si dividono in tre gruppi. Nel primo, \texttt{web-NotreDame},
+\texttt{web-Stanford}, \texttt{web-BerkStan} e \texttt{wiki-topcats}, le classi
+sono da 2,9 a 19 volte più veloci. Su questi grafi la riga più lunga è enorme
+rispetto al resto del lavoro, fra lo 0,7 e l'1,7\,\% degli archi. Nel kernel
+ingenuo la somma un solo thread, un predecessore dopo l'altro, e il kernel
+finisce solo quando quel thread ha finito; con le classi se la dividono i 256
+thread di un blocco: su \texttt{wiki-topcats} sono 238\,040 predecessori per
+un solo thread, contro 930 per ciascuno dei 256.
+
+\stacco
+Nel secondo gruppo, \texttt{web-Google}, \texttt{soc-Pokec} e
+\texttt{soc-LiveJournal1}, le classi sono da 1,1 a 1,5 volte più veloci. Qui
+la riga più lunga pesa al più lo 0,12\,\% degli archi e finisce prima del
+resto. Questi grafi hanno
+invece molte righe medie, da 17 a 256 predecessori, che portano dal 44
+all'81\,\% degli archi (Tabella~\ref{tab:bins}): il guadagno viene con ogni
+probabilità da queste righe, che con le classi un warp si divide invece di
+lasciarle a un thread.
+
+\stacco
+Il terzo gruppo è \texttt{cit-Patents}, dove le due versioni sono alla
+pari entro il 2\,\%. La sua riga più lunga ha appena 779 predecessori, e tre
+quarti degli archi stanno in righe fino a 16, che le classi lasciano comunque
+a un thread ciascuna, come l'ingenuo: senza hub le classi non servono, ma
+nemmeno costano.
+
 \paragraph{La singola precisione sulla GPU.}
 La variante \texttt{float} dimezza i byte dei tre vettori, ma sulla GPU
 non sempre conviene. Sulla RTX 2080 Ti riduce il tempo della GPU sola del
@@ -1875,7 +1948,8 @@ mediana della durata di quella fase sulle iterazioni di quell'esecuzione,
 calcolata colonna per colonna: i valori di una
 stessa riga possono quindi venire da iterazioni diverse, e ricompongono
 iter. con una variazione di 0,1--0,2~ms. Con la GPU sola le fasi della CPU
-mancano, e i tempi della Macchina 3 sono gli stessi a x8 e a x16.}
+mancano, e sulla Macchina 3 i tempi a x8 e a x16 coincidono, quuindi
+la tabella ne riporta una riga sola.}
 \label{tab:fasi}
 \small
 \setlength{\tabcolsep}{4pt}
@@ -1974,6 +2048,10 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     su ogni macchina, è stato eseguito senza modifiche su cinque
     GPU, di tre modelli e due architetture, con tre versioni del CUDA Toolkit;
     griglie e memoria sono dimensionate a tempo di esecuzione.
+  \item \textbf{Granularità adattiva.} Nella versione solo GPU
+    le tre classi del secondo ciclo confrontate con il kernel ingenuo, un
+    thread per riga, nel caso peggiore pareggiano
+    e nel migliore rendono la GPU 19 volte più veloce.
 \end{itemize}
 
 \subsection{Punti deboli e limiti}
@@ -2023,8 +2101,9 @@ quindi quanti thread si dividono il lavoro, più che quanti archi ci sono.
     Queste due soglie sono state fissate dopo poche prove, senza
     un'analisi approfondita, e quelle migliori dipendono verosimilmente dal
     grafo e dalla GPU: andrebbero cercate in modo sistematico, misurando
-    i tempi di accumulo al variare delle due soglie e confrontandoli con quelli del
-    kernel ingenuo, un thread per riga, che non è stato misurato.
+    i tempi di accumulo al variare delle due soglie.
+    Il confronto con il kernel ingenuo, un thread per riga,
+    mostra che le classi rendono, ma non quali soglie rendano di più.
   \item \textbf{Bilanciamento automatico della quota.} Nella versione
     ibrida la quota di archi assegnata alla CPU è un parametro
     (\texttt{-s}), e la migliore è quella con cui CPU e GPU finiscono il
@@ -2060,6 +2139,11 @@ collegamento fra le due. Dove GPU e CPU si equivalgono, come sulla Macchina 1,
 dividere il lavoro rende fino a 1,8 volte la migliore delle due da sola; dove
 la GPU è molto più veloce, la copia a ogni iterazione costa più di quanto la
 CPU possa restituire, e conviene lasciarle tutto.
+
+\stacco
+Sulla GPU conta anche come il lavoro è diviso fra i thread: dare alle
+righe lunghe un warp o un blocco invece di un thread solo la rende fino a 19
+volte più veloce.
 
 \stacco
 Il filo comune a tutte le misure è che il calcolo è limitato dalla
