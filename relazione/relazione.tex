@@ -67,7 +67,7 @@
 % =====================================================================
 Il progetto implementa e analizza l'algoritmo PageRank su architetture
 parallele, confrontando quattro versioni: una sequenziale, che fa da riferimento, una basata su OpenMP,
-una che usa la sola GPU e una ibrida che distribuisce il carico fra CPU e GPU.
+una che usa solo la GPU e una ibrida che distribuisce il carico fra CPU e GPU.
 Sequenziale e OpenMP condividono lo stesso file sorgente e differiscono
 solo per le opzioni di compilazione, così che il riferimento non possa
 divergere dal codice parallelo né essere falsato dai costi di gestione dei
@@ -1926,9 +1926,11 @@ L'iterazione dura quanto la più lunga delle due.\footnote{$\text{iter.} \approx
 la strada della GPU è la più lunga, 43,5~ms di accumulo contro i 3,6~+~30,4~ms della
 CPU, che la attende per 9,9~ms; a 0,75 accade il contrario, e la strada più
 lunga è quella della CPU. La quota migliore, quella in cui le due strade
-durano uguale, sta quindi fra le due, poco sopra 0,5. Sulla RTX 2080 Ti a x16, a quota 0,25, le due strade
+durano uguale, sta quindi fra le due, poco sopra 0,5. Sulla RTX 2080 Ti della
+Macchina 3, a x16, a quota 0,25, le due strade
 quasi si equivalgono, 7,3~ms la GPU e 6,7~ms la CPU, e l'iterazione scende da 9,1
-a 7,6~ms. Sullo stesso grafo e alla stessa quota, a x8 la sola copia costa
+a 7,6~ms. Sullo stesso grafo e alla stessa quota, sull'altra RTX 2080 Ti della
+Macchina 3, a x8, la sola copia costa
 5,7~ms invece di 2,9~ms: la strada della CPU arriva a 9,5~ms, più dei
 7,3~ms della GPU e più anche dei 9,1~ms dell'intera iterazione con la GPU sola.
 Sulla Macchina 2, con 4 core invece di 12, la strada della CPU dura
@@ -1980,10 +1982,11 @@ RTX 2080 Ti & M2     & 0,25 & 17,4 & 0,2 & 7,2  & 5,9  & 11,1 & 0,1  & 0,1  \\
 Le quote piccole, che danno alla CPU i soli hub, non rendono quasi mai,
 e la ragione sta in un'ipotesi che le misure smentiscono: gli hub
 sono le righe che la GPU calcola meglio. Su \texttt{soc-LiveJournal1}, con la
-RTX 2080 Ti a x16, la quota 0,05 toglie alla GPU il 5\,\% degli archi,
+RTX 2080 Ti della Macchina 3, a x16, la quota 0,05 toglie alla GPU il 5\,\% degli archi,
 ma il suo accumulo scende solo da 8,86 a
 8,73~ms, l'1,5\,\%: quegli archi le costavano 0,04~ns l'uno, contro una media
-di 0,13~ns. Il kernel a blocchi li legge con accessi coalescenti, e su righe così
+di 0,13~ns. Il kernel a blocchi legge con accessi coalescenti gli indici dei
+predecessori di questi hub, e su righe così
 lunghe i thread del blocco restano tutti al lavoro. La copia di
 \texttt{contrib}, invece, è il costo fisso della versione ibrida, $8N$ byte per
 iterazione qualunque sia la quota,
