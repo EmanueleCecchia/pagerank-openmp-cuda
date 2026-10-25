@@ -1,40 +1,21 @@
 #!/usr/bin/env bash
-# Runs the full experiment sweep on this machine and collects the results
-# under results/<machine>/, one folder per machine measured:
+# Runs the experiment sweep on this machine and writes, under results/<machine>/:
 #
-#   results/<machine>/bench.csv          one row per run (graph, build, threads, timing)
-#   results/<machine>/<graph>.ranks.txt  the ranks themselves, from the OpenMP build
+#   bench.csv           one row per run (graph, build, threads, timing)
+#   <graph>.ranks.txt   the ranks, from the OpenMP build (gitignored)
+#   nsys/               with nsys installed, a report per hybrid run (gitignored),
+#   nsys_phases.csv     and the phases of its iterations (tools/nsys_phases.py)
 #
-# The machine name is required, so that a sweep never overwrites the results
-# of another machine by accident:
-#   MACHINE=machine2 tools/run_benchmarks.sh
-#
-# It may name a sub-folder too: on a machine with more than one GPU the CPU
-# builds go in the machine's folder, and the hybrid one in a folder per GPU,
-# picked with CUDA_VISIBLE_DEVICES:
-#   MACHINE=machine3 BUILDS="seq omp" tools/run_benchmarks.sh
+# MACHINE is required, so a sweep never overwrites another machine's results;
+# it may name a sub-folder per GPU, picked with CUDA_VISIBLE_DEVICES:
+#   MACHINE=machine1 tools/run_benchmarks.sh
 #   CUDA_VISIBLE_DEVICES=0 MACHINE=machine3/x16 BUILDS=hybrid tools/run_benchmarks.sh
 #
-# Every configuration is run REPS times because a single timing on a laptop is
-# noise; take the minimum per configuration when building the tables, since
-# the fastest run is the one least disturbed by other activity.
-#
-# BUILDS picks what to measure: seq, omp (with its float variant) and hybrid
-# (with its float variant, at every share of the edges in SHARES).  A sweep
-# replaces in bench.csv only the rows of the graphs, builds and, for the
-# hybrid one, shares it measures, so the hybrid build can be measured without
-# touching the CPU results, vice versa, and one share without the others:
-#   MACHINE=machine1 BUILDS=hybrid tools/run_benchmarks.sh
-#   MACHINE=machine1 BUILDS=hybrid SHARES=1 tools/run_benchmarks.sh
-#
-# When nsys is installed every run of the hybrid build goes under it, and its
-# report is kept in results/<machine>/nsys/ (gitignored): at the end
-# tools/nsys_phases.py reads from each report how that run's iterations split
-# up into results/<machine>/nsys_phases.csv, one row for every hybrid row of
-# bench.csv.  NSYS= turns it off; NSYS=/path/to/nsys picks another one.
-#
-# Override any of the other settings from the environment, e.g.
-#   MACHINE=machine2 GRAPHS="wiki-Vote web-Google" REPS=1 tools/run_benchmarks.sh
+# Each configuration runs REPS times, and the tables take the minimum, the run
+# least disturbed by other activity.  A sweep replaces in bench.csv only the
+# rows it measures again (graph, build and, for the hybrid one, share).  Other
+# settings come from the environment: GRAPHS, BUILDS (seq, omp, hybrid),
+# THREADS, SHARES, REPS, DATA, OUT, NSYS (empty: no nsys), PYTHON.
 
 set -euo pipefail
 
@@ -48,8 +29,7 @@ if [ -z "${MACHINE:-}" ]; then
 fi
 
 # Powers of two up to the logical CPUs, plus the physical cores and the logical
-# CPUs themselves: 1 2 4 8 on a 4-core/8-thread laptop, 1 2 4 8 12 16 24 on a
-# 12-core/24-thread machine.
+# CPUs: 1 2 4 8 on 4 cores/8 threads, 1 2 4 8 12 16 24 on 12 cores/24 threads.
 default_threads() {
     local logical physical p=1 list=""
     logical=$(nproc)
@@ -64,9 +44,8 @@ default_threads() {
 GRAPHS=${GRAPHS:-"wiki-Vote web-NotreDame web-Stanford web-Google web-BerkStan cit-Patents wiki-topcats soc-Pokec soc-LiveJournal1"}
 BUILDS=${BUILDS:-"seq omp hybrid"}
 THREADS=${THREADS:-$(default_threads)}
-# Shares of the edges for the CPU in the hybrid build, each one measured and
-# recorded: 0 is the GPU alone, 1 the CPU alone but for contrib_kernel and
-# the rows with no in-neighbours.
+# Shares of the edges for the CPU in the hybrid build: 0 is the GPU alone, 1
+# every row with in-neighbours on the CPU.
 SHARES=${SHARES:-"0 0.05 0.1 0.25 0.5 0.75 1"}
 REPS=${REPS:-3}
 DATA=${DATA:-data/snap}
@@ -98,12 +77,9 @@ done
 
 mkdir -p "$OUT"
 
-# Drop the rows this sweep is about to measure again, keep every other one.
-# The graph column holds the .csr path, so the graph is its last component;
-# the hybrid rows also match on the share, column 14, compared as numbers so
-# that 0.50 is 0.5.  In the C locale: with a decimal comma in LC_NUMERIC
-# (es_ES, it_IT) mawk reads 0.25 as 0, every share below 1 matches 0, and
-# measuring 0.05 alone would drop the rows of 0, 0.25, 0.5 and 0.75 too.
+# Drop the rows about to be measured again: graph (last part of the .csr path),
+# build and, for the hybrid one, share (column 14, compared as a number).
+# LC_ALL=C: with a decimal comma mawk reads 0.25 as 0 and would drop too much.
 if [ -f "$CSV" ]; then
     LC_ALL=C awk -F, -v graphs="$GRAPHS" -v builds="$BUILDS" -v shares="$SHARES" '
         BEGIN { split(graphs, g, " "); for (i in g) G[g[i] ".csr"] = 1
@@ -116,7 +92,7 @@ if [ -f "$CSV" ]; then
     ' "$CSV" > "$CSV.tmp"
     mv "$CSV.tmp" "$CSV"
 fi
-# The same for the nsys reports of the hybrid runs measured again.
+# The same for their nsys reports.
 if measures hybrid && [ -n "$NSYS" ]; then
     mkdir -p "$NSYS_DIR"
     for graph in $GRAPHS; do
@@ -126,17 +102,10 @@ if measures hybrid && [ -n "$NSYS" ]; then
     done
 fi
 
-# One run of the hybrid build, on every logical CPU for the CPU's rows, as the
-# OpenMP build at its largest thread count.  Under nsys, if any, tracing the
-# CUDA calls only: sampling the CPU would slow down the runs where the CPU
-# does most of the work.  The report is the very run whose time goes in
-# bench.csv.
-# --show-output=false keeps the program's output in the report only: to echo
-# it on the console nsys 2022-2023 starts nsys-tee, which spins on a CPU of
-# its own, and with every logical CPU running an OpenMP thread the barrier of
-# the CPU's accumulation waits for the thread left without one -- on Machine 2 that
-# added ~0.1 s to every run with a CPU share.  The output goes to /dev/null
-# here anyway.
+# One hybrid run on every logical CPU, under nsys if any, tracing the CUDA
+# calls only: sampling the CPU would slow down the CPU's share.
+# --show-output=false: otherwise nsys 2022-2023 starts nsys-tee, which takes a
+# CPU away from the OpenMP threads (about 0.1 s per run on Machine 2).
 run_hybrid() {    # executable precision share repetition
     if [ -n "$NSYS" ]; then
         OMP_NUM_THREADS=$(nproc) "$NSYS" profile --trace=cuda --sample=none --cpuctxsw=none \
@@ -163,7 +132,7 @@ for graph in $GRAPHS; do
     echo "== $graph"
     for rep in $(seq "$REPS"); do
         if measures seq; then
-            # Sequential build: genuinely no OpenMP, not one thread of it.
+            # no OpenMP at all, not even one thread
             ./build/pagerank_seq "$csr" -c "$CSV" >/dev/null
         fi
         if measures omp; then
