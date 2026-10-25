@@ -1,26 +1,10 @@
-/* PageRank on the GPU and the CPU together, the hybrid version:
- * the two loops of every iteration turned into
- * CUDA kernels, and part of the accumulation left to the OpenMP threads of
- * the host.
+/* PageRank on the GPU and the CPU together, the hybrid version.
  *
- * The graph goes to the device once, before the clock starts,
- * and the ranks come back once, after it stops.
- *
- * The accumulation adapts its granularity to the length of the rows:
- * short rows get a thread each,
- * medium rows a warp, long rows a whole block.
- *
- * The longest rows, the hubs, go to the CPU instead, from the longest down
- * until they hold params->host_share of the edges.
- *
- * With a share of 0 the CPU gets no rows and none of this happens: every
- * iteration runs on the GPU, and the only data that crosses the bus is the
- * L1 change the host needs to decide whether to stop.  That is the GPU-only
- * version, the same code down to the last call, so it needs no build of its
- * own.
- *
- * Nothing about the device is assumed: the multiprocessor count, how many
- * blocks each one holds and the free memory are all queried at run time.
+ * The two loops of each iteration are CUDA kernels.  The accumulation gives
+ * short rows a thread, medium rows a warp and long rows a block; the longest
+ * rows, up to params->host_share of the edges, go to the OpenMP threads of
+ * the host instead.  With a share of 0 the CPU gets nothing: that is the
+ * GPU-only version.  The device's limits are all queried at run time.
  */
 
 #include "pagerank.h"
@@ -31,16 +15,14 @@
 #include <stdlib.h>
 #include <time.h>
 
-/* Threads per block: a multiple of the warp size */
+/* Threads per block, a multiple of the warp size */
 #define BLOCK 256
 #define WARP  32
 
-/* The scalars each iteration accumulates on the device, kept in one array so
- * that a single memset clears them and a single copy brings them back. */
+/* Per-iteration scalars, in one array: one memset clears them, one copy reads them. */
 enum { SCALAR_DANGLING, SCALAR_ERROR, N_SCALARS };
 
-/* Granularity classes, in the order their rows are stored.  The last is the
- * CPU's: its rows are accumulated on the host. */
+/* Row classes, in the order their rows are stored; the last is the CPU's. */
 enum { CLASS_THREAD, CLASS_WARP, CLASS_BLOCK, CLASS_HOST, N_CLASSES };
 
 
@@ -69,15 +51,8 @@ static double mib(size_t bytes)
 
 /* ---- reductions ---------------------------------------------------------- */
 
-/* Many threads each hold a piece of a sum; these functions add the pieces
- * together.  Three sums go through here: the contributions of the
- * in-neighbours of a node (warp and block kernels), the L1 error and the
- * dangling mass. */
-
-/* Adds up the v of the 32 lanes of a warp; the total ends up in lane 0.
- * At each step every lane adds the v of the lane `offset` places further on,
- * and offset halves: 16, 8, 4, 2, 1.  After these 5 steps lane 0 holds the
- * sum of all 32.  All 32 lanes must call it together. */
+/* Sum over the 32 lanes of a warp, by shuffles; the total ends up in lane 0.
+ * All 32 lanes must call it. */
 __device__ accum_t warp_sum(accum_t v)
 {
     int offset;
@@ -88,57 +63,43 @@ __device__ accum_t warp_sum(accum_t v)
     return v;
 }
 
-/* Adds up the v of all the threads of a block; the total ends up in thread 0.
- * Two levels: each warp adds up its 32 values with warp_sum() and writes its
- * total to shared memory, then warp 0 adds up those 8 totals.
- * All threads of the block must call it. */
+/* Sum over a block: each warp sums its lanes, then warp 0 sums the warp
+ * totals.  The total ends up in thread 0; all threads must call it. */
 __device__ accum_t block_sum(accum_t v)
 {
-    __shared__ accum_t warp_total[BLOCK / WARP];   /* one total per warp, visible to the whole block */
-    const int lane = threadIdx.x % WARP;   /* position inside the warp, 0..31 */
-    const int warp = threadIdx.x / WARP;   /* which warp of the block, 0..7 */
+    __shared__ accum_t warp_total[BLOCK / WARP];
+    const int lane = threadIdx.x % WARP;
+    const int warp = threadIdx.x / WARP;
 
     v = warp_sum(v);
     if (lane == 0) {
         warp_total[warp] = v;
     }
-    /* Barrier: no thread goes on until all the threads of the block are here.
-     * Warp 0 must not read warp_total before all 8 warps have written it. */
+    /* warp 0 reads the totals only once every warp has written its own */
     __syncthreads();
     if (warp == 0) {
-        /* lanes 0-7 take the 8 totals, the other lanes add nothing */
         v = warp_sum(lane < BLOCK / WARP ? warp_total[lane] : 0.0);
     }
-    /* Second barrier: accumulate_block_rows() calls this once per row, and no
-     * warp may write the totals of the next row while warp 0 is still
-     * reading those of this one. */
+    /* called once per row: the next row must not overwrite totals still read */
     __syncthreads();
     return v;
 }
 
-/* Adds up v over the block and adds the total to *out, a single variable
- * shared by the whole grid: what reduction(+) does in OpenMP. */
+/* Block sum added to *out with one atomicAdd per block, not per thread: what
+ * reduction(+) does in OpenMP. */
 __device__ void block_sum_add(accum_t v, accum_t *out)
 {
     v = block_sum(v);
     if (threadIdx.x == 0) {
-        /* Atomic: reads *out, adds v and writes it back as one indivisible
-         * step, so that blocks adding at the same moment do not overwrite
-         * each other.  One per block, not one per thread: thousands of
-         * threads would queue up on the same address. */
         atomicAdd(out, v);
     }
 }
 
 /* ---- kernels ------------------------------------------------------------- */
 
-/* First loop of the iteration: how much rank each node sends along each of
- * its outgoing edges, and the mass of the dangling nodes, which have nowhere
- * to send it.
- *
- * Like every kernel here it loops with a grid-wide stride: the grid is sized
- * to the device, not to the graph, and each thread takes v, v + stride,
- * v + 2*stride, ... until it runs past the end. */
+/* First loop: each node's rank over its out-degree, and the dangling mass.
+ * Like every kernel here, a grid-stride loop: the grid is sized to the
+ * device, not to the graph. */
 __global__ void contrib_kernel(uint64_t n, const uint32_t *__restrict__ out_deg,
                                const rank_t *__restrict__ cur,
                                rank_t *__restrict__ contrib, accum_t *scalars)
@@ -152,34 +113,23 @@ __global__ void contrib_kernel(uint64_t n, const uint32_t *__restrict__ out_deg,
             contrib[v] = (rank_t)0;
             dangling += (accum_t)cur[v];
         } else {
-            /* Divided in rank_t, where pagerank.c divides in double: the
-             * exact quotient is rounded to a float once either way (out-degrees
-             * below 2^24 convert exactly), so the result is the same bit for
-             * bit, and the float build stays off the double-precision units,
-             * a small fraction of the single-precision ones on consumer GPUs. */
+            /* In rank_t: the same result as dividing in double, and the float
+             * build stays off the double-precision units. */
             contrib[v] = cur[v] / (rank_t)out_deg[v];
         }
     }
     block_sum_add(dangling, &scalars[SCALAR_DANGLING]);
 }
 
-/* The base every rank starts from, (1-d)/N plus the dangling mass spread
- * over all nodes.  Complete when an accumulate kernel reads it: contrib_kernel
- * ran to the end first, the kernels being queued on the same stream.
- * __host__ as well: the CPU's rows start from it too. */
+/* (1-d)/N plus the dangling mass spread over all nodes; the host uses it too,
+ * for the CPU's rows. */
 __host__ __device__ double rank_base(uint64_t n, double d, const accum_t *scalars)
 {
     return (1.0 - d) / (double)n + d * scalars[SCALAR_DANGLING] / (double)n;
 }
 
-/* Second loop, short rows: one thread per row, the direct translation of the
- * OpenMP loop.  The rows to do are rows[0 .. n_rows-1]; rows == NULL means
- * all of them in order, which is what a thread_max beyond the longest row
- * gives: the naive scheme, every row a thread of its own.
- *
- * Cheap only while rows are short: the 32 threads of a warp walk 32 rows at
- * once, so their reads of col_idx land in 32 different places, and the warp
- * moves on only when its longest row is done. */
+/* Second loop, short rows: one thread per row.  rows == NULL means every row
+ * in order, which is the naive kernel. */
 __global__ void accumulate_thread_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
                                        uint64_t n, double d,
                                        const uint64_t *__restrict__ row_ptr,
@@ -208,10 +158,8 @@ __global__ void accumulate_thread_rows(uint64_t n_rows, const uint32_t *__restri
     block_sum_add(error, &scalars[SCALAR_ERROR]);
 }
 
-/* Medium rows: one warp per row.  Lane k reads elements k, k+32, ... of the
- * row, so the 32 lanes read 32 consecutive entries of col_idx together, in
- * one or two memory transactions instead of 32; then a shuffle reduction
- * adds up their partial sums. */
+/* Medium rows: one warp per row.  Lane k reads elements k, k+32, ..., so the
+ * warp reads col_idx coalesced. */
 __global__ void accumulate_warp_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
                                      uint64_t n, double d,
                                      const uint64_t *__restrict__ row_ptr,
@@ -226,8 +174,7 @@ __global__ void accumulate_warp_rows(uint64_t n_rows, const uint32_t *__restrict
     accum_t error = 0.0;   /* only lane 0 adds to it */
     uint64_t i, j;
 
-    /* i is the same in every lane of the warp, so all of them reach
-     * warp_sum() together, as the shuffles require. */
+    /* i is the same for the whole warp, as warp_sum() requires */
     for (i = ((uint64_t)blockIdx.x * blockDim.x + threadIdx.x) / WARP; i < n_rows; i += warps) {
         const uint32_t v = rows[i];
         accum_t sum = 0.0;
@@ -246,8 +193,7 @@ __global__ void accumulate_warp_rows(uint64_t n_rows, const uint32_t *__restrict
     block_sum_add(error, &scalars[SCALAR_ERROR]);
 }
 
-/* Long rows, the hubs of the power law: one block per row, the same scheme
- * as the warp one with BLOCK threads instead of 32. */
+/* Long rows: one block per row, as the warp kernel with BLOCK threads. */
 __global__ void accumulate_block_rows(uint64_t n_rows, const uint32_t *__restrict__ rows,
                                       uint64_t n, double d,
                                       const uint64_t *__restrict__ row_ptr,
@@ -278,9 +224,7 @@ __global__ void accumulate_block_rows(uint64_t n_rows, const uint32_t *__restric
     block_sum_add(error, &scalars[SCALAR_ERROR]);
 }
 
-/* The ranks the CPU computed for its rows arrive packed, one after the other
- * in the order of rows; this puts each in its place in nxt, so that the next
- * contrib_kernel finds every node there. */
+/* Puts the CPU's ranks, packed in the order of rows, back in their place in nxt. */
 __global__ void scatter_host_ranks(uint64_t n_rows, const uint32_t *__restrict__ rows,
                                    const rank_t *__restrict__ ranks,
                                    rank_t *__restrict__ nxt)
@@ -295,11 +239,8 @@ __global__ void scatter_host_ranks(uint64_t n_rows, const uint32_t *__restrict__
 
 /* ---- host side ----------------------------------------------------------- */
 
-/* How many blocks to launch: as many as the device holds resident at once
- * -- blocks per multiprocessor, which the runtime computes from the
- * kernel's registers and shared memory, times the multiprocessors -- but no
- * more than the work needs.  With the grid-stride loops a single such wave
- * covers a graph of any size. */
+/* Blocks to launch: as many as the device keeps resident (blocks per SM times
+ * SMs), or fewer if the work needs fewer. */
 static int grid_size(const void *kernel, int multiprocessors, uint64_t blocks_needed)
 {
     int per_sm = 0;
@@ -311,21 +252,15 @@ static int grid_size(const void *kernel, int multiprocessors, uint64_t blocks_ne
     return (int)blocks_needed;
 }
 
-/* Where the CPU's rows begin.  Taking the rows from the longest down, stops
- * before their in-neighbours exceed share of the edges; every row at least
- * *min_len long then goes to the CPU, so that the split is a degree
- * threshold.  A share asked of the edges, not a threshold asked of the user,
- * because the same share takes rows of a few dozen in-neighbours on one
- * graph and of thousands on another.
- *
- * *min_len is longer than any row when the CPU gets nothing (share 0, or a
- * longest row beyond the share); *edges receives the in-neighbours the CPU
- * gets.  Returns 0, or -1 if out of memory. */
+/* The shortest row the CPU takes: whole lengths from the longest down, while
+ * their edges stay within share of the total.  *min_len is longer than any
+ * row when the CPU gets nothing; *edges receives the edges it gets.  Returns
+ * 0, or -1 if out of memory. */
 static int host_threshold(const csr_graph *g, double share,
                           uint64_t *min_len, uint64_t *edges)
 {
     const double budget = share * (double)g->n_edges;
-    uint64_t *edges_of_len;   /* the in-neighbours of all the rows of each length */
+    uint64_t *edges_of_len;   /* edges in all the rows of each length */
     uint64_t v, len, max_len = 0, taken = 0;
 
     for (v = 0; v < g->n_nodes; v++) {
@@ -343,8 +278,7 @@ static int host_threshold(const csr_graph *g, double share,
         edges_of_len[len] += len;
     }
 
-    /* Whole lengths at a time, the longest first; the empty rows, which hold
-     * no edges, stay on the GPU whatever the share. */
+    /* empty rows stay on the GPU whatever the share */
     *min_len = max_len + 1;
     for (len = max_len; len >= 1; len--) {
         if ((double)(taken + edges_of_len[len]) > budget) {
@@ -372,17 +306,10 @@ static int row_class(const csr_graph *g, const pagerank_params *params,
     return len <= params->warp_max ? CLASS_WARP : CLASS_BLOCK;
 }
 
-/* Groups the rows by class into one array, first those for a thread, then
- * those for a warp, then those for a block, and last those for the CPU
- * (the rows at least host_min_len long); each group in increasing row
- * order so that neighbouring threads still get neighbouring rows.  The
- * nodes keep their numbers: renumbering them by class would scatter the
- * in-neighbours that the original order keeps close (the locality table of
- * the report).
- *
- * count[c] receives how many rows class c got, *rows the array, left NULL
- * when every row falls in the thread class: there is nothing to group then,
- * and the kernel walks the rows in order.  Returns 0, or -1 if out of memory. */
+/* Groups the rows by class into one array, each class in increasing row
+ * order; the nodes keep their numbers, so the locality of the graph is kept.
+ * count[c] receives the rows of class c; *rows stays NULL when every row is
+ * in the thread class.  Returns 0, or -1 if out of memory. */
 static int group_rows(const csr_graph *g, const pagerank_params *params,
                       uint64_t host_min_len, uint32_t **rows, uint64_t count[N_CLASSES])
 {
@@ -415,21 +342,16 @@ static int group_rows(const csr_graph *g, const pagerank_params *params,
     return 0;
 }
 
-/* The CPU's share of the accumulation, by the OpenMP threads.  The same sum as
- * accumulate_thread_rows(), over the rows the CPU took, reading contrib from the
- * copy the GPU sent.  ranks[i] holds the rank of rows[i] at the previous
- * iteration and receives the new one: packed in the order of rows, they go
- * back to the device in a single copy.  Returns the L1 change over these
- * rows. */
+/* The CPU's rows, on the OpenMP threads, reading the copy of contrib.
+ * ranks[i] holds the old rank of rows[i] and receives the new one.  Returns
+ * the L1 change over these rows. */
 static accum_t accumulate_host_rows(const csr_graph *g, uint64_t n_rows, const uint32_t *rows,
                                     double base, double d, const rank_t *contrib, rank_t *ranks)
 {
     accum_t error = 0.0;
     uint64_t i;
 
-    /* Dynamic, because these are the longest rows and their lengths still
-     * span orders of magnitude; chunks of a few rows only, because there are
-     * few of them and every one is long. */
+    /* dynamic: even the longest rows vary in length by orders of magnitude */
 #pragma omp parallel for schedule(dynamic, 16) reduction(+ : error)
     for (i = 0; i < n_rows; i++) {
         const uint32_t v = rows[i];
@@ -446,10 +368,8 @@ static accum_t accumulate_host_rows(const csr_graph *g, uint64_t n_rows, const u
     return error;
 }
 
-/* Besides describing the GPU, this is the first CUDA call of the program,
- * and the first CUDA call is the one that starts the driver up on the GPU,
- * which takes a while.  main() calls it before pagerank(), so that this
- * start-up cost is paid here and does not end up in the measured time. */
+/* Describes the GPU.  As the first CUDA call it also pays the start-up of the
+ * driver, before the clock starts. */
 int pagerank_device(char *buf, size_t size)
 {
     cudaDeviceProp prop;
@@ -515,9 +435,9 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     host_bytes = (size_t)count[CLASS_HOST] * sizeof(rank_t);
     needed = row_ptr_bytes + col_idx_bytes + out_deg_bytes + rows_bytes
            + 3 * vector_bytes      /* cur, nxt, contrib */
-           + host_bytes;           /* the ranks of the CPU's rows, on their way in */
+           + host_bytes;           /* the ranks of the CPU's rows */
 
-    /* Everything must fit at once: there is no out-of-core path (yet). */
+    /* Everything must fit at once: there is no out-of-core path. */
     HANDLE_ERROR(cudaMemGetInfo(&free_bytes, &total_bytes));
     if (needed > free_bytes) {
         fprintf(stderr, "the graph needs %.1f MiB on %s, only %.1f MiB are free\n",
@@ -536,21 +456,16 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         (host_bytes > 0 && cudaMalloc(&d_host_ranks, host_bytes) != cudaSuccess) ||
         cudaMalloc(&d_scalars, N_SCALARS * sizeof(accum_t))     != cudaSuccess) {
         fprintf(stderr, "out of device memory for %.1f MiB on %s\n", mib(needed), prop.name);
-        (void)cudaGetLastError();   /* clear it, so no later check reports it again */
+        (void)cudaGetLastError();   /* clear the error */
         goto out;
     }
-    /* Page-locked, which the asynchronous copy of the scalars requires. */
+    /* Page-locked, as asynchronous copies require. */
     HANDLE_ERROR(cudaMallocHost(&h_scalars, N_SCALARS * sizeof(accum_t)));
     HANDLE_ERROR(cudaStreamCreate(&stream));
     if (count[CLASS_HOST] > 0) {
-        /* Only when the CPU has rows.  contrib must reach the host while
-         * the GPU keeps computing, which needs two things: page-locked host
-         * memory, the only kind the GPU can copy into on its own, while
-         * kernels run; and a stream of its own for the copy, since in one
-         * stream every operation waits for the one before.  The two events
-         * are just markers: the copy waits for contrib_done (contrib_kernel
-         * has finished), the host waits for contrib_copied (the copy has
-         * finished).  They measure no time, hence cudaEventDisableTiming. */
+        /* Only when the CPU has rows: page-locked buffers for contrib and the
+         * CPU's ranks, a stream for the copy, and two events used only to
+         * synchronize. */
         HANDLE_ERROR(cudaMallocHost(&h_contrib,    vector_bytes));
         HANDLE_ERROR(cudaMallocHost(&h_host_ranks, host_bytes));
         HANDLE_ERROR(cudaStreamCreate(&copy_stream));
@@ -572,9 +487,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     if (rows_bytes > 0) {
         HANDLE_ERROR(cudaMemcpy(d_rows, rows, rows_bytes, cudaMemcpyHostToDevice));
     }
-    /* Each class gets its own kernel, over its own slice of d_rows, and as
-     * many blocks as its rows need: a row per thread, per warp, per block.
-     * The CPU's slice serves only to put its ranks back in place. */
+    /* One slice of d_rows per class; the CPU's slice only serves to put its
+     * ranks back in place. */
     for (c = 0; c < N_CLASSES; c++) {
         class_rows[c] = NULL;
     }
@@ -596,8 +510,7 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
     grid[CLASS_HOST]   = grid_size((const void *)scatter_host_ranks, prop.multiProcessorCount,
                                    (count[CLASS_HOST] + BLOCK - 1) / BLOCK);
 
-    /* The two device buffers alternate, by swapping the
-     * pointers handed to the kernels. */
+    /* cur and nxt swap at every iteration */
     cur = d_rank;
     nxt = d_next;
 
@@ -609,10 +522,9 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         contrib_kernel<<<grid_contrib, BLOCK, 0, stream>>>(n, d_out_deg, cur, d_contrib,
                                                            d_scalars);
         if (count[CLASS_HOST] > 0) {
-            /* contrib, and the dangling mass with it, to the host.  The copy
-             * stream waits for contrib_kernel alone, not for the accumulate
-             * kernels queued after it: the copy engine moves the vector
-             * while the GPU accumulates its own rows. */
+            /* contrib and the dangling mass go to the host on the copy stream,
+             * which waits for contrib_kernel alone: the copy overlaps the
+             * accumulate kernels. */
             HANDLE_ERROR(cudaEventRecord(contrib_done, stream));
             HANDLE_ERROR(cudaStreamWaitEvent(copy_stream, contrib_done, 0));
             HANDLE_ERROR(cudaMemcpyAsync(h_contrib, d_contrib, vector_bytes,
@@ -640,10 +552,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
         HANDLE_ERROR(cudaGetLastError());
 
         if (count[CLASS_HOST] > 0) {
-            /* The kernels are queued and run on their own: the host is free
-             * to accumulate the CPU's rows, as soon as contrib has arrived.
-             * Their ranks go back behind the accumulate kernels, in time for the
-             * next contrib_kernel, which needs every node. */
+            /* The CPU's rows, as soon as contrib arrives; their ranks go back
+             * behind the accumulate kernels, before the next contrib_kernel. */
             HANDLE_ERROR(cudaEventSynchronize(contrib_copied));
             host_error = accumulate_host_rows(g, count[CLASS_HOST], host_rows,
                                               rank_base(n, d, h_scalars), d,
@@ -655,9 +565,8 @@ int pagerank(const csr_graph *g, const pagerank_params *params,
             HANDLE_ERROR(cudaGetLastError());
         }
 
-        /* The host waits here for the whole iteration: it needs the error to
-         * decide whether to launch the next one.  The wait covers the copy
-         * of h_host_ranks too, which the next accumulate_host_rows() overwrites. */
+        /* The host waits for the whole iteration: it needs the error, and
+         * h_host_ranks must be copied before it is overwritten. */
         HANDLE_ERROR(cudaMemcpyAsync(h_scalars, d_scalars, N_SCALARS * sizeof(accum_t),
                                    cudaMemcpyDeviceToHost, stream));
         HANDLE_ERROR(cudaStreamSynchronize(stream));
